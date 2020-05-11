@@ -2,7 +2,11 @@ name: Continuous Integration
 
 on:
   push:
+    paths-ignore:
+      - '**.md'
   pull_request:
+    paths-ignore:
+      - '**.md'
   schedule:
     - cron:  0 9 * * 1-5
 
@@ -15,32 +19,35 @@ jobs:
       - uses: actions/setup-node@v1
         with:
           node-version: 12
-      - run: npm install
+      - run: npx panva/npm-install-retry
       - run: npm run lint
+      - run: npm run lint-ts
 
   test:
     name: Node Tests + Coverage
     runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: false
       matrix:
         node-version:
           - 10.13.0
           - 10
           - 12.0.0
           - 12
+          - 13.0.0
+          - 13
+          - 14.0.0
+          - 14
         os:
           - ubuntu-latest
           - windows-latest
+          - macOS-latest
     steps:
       - uses: actions/checkout@master
       - uses: actions/setup-node@v1
         with:
           node-version: ${{ matrix.node-version }}
-      - run: npm install
-      - run: npm run coverage
-        env:
-          CI: true
+      - run: npx panva/npm-install-retry
+      - run: npm run ci
       - env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         run: npx codecov
@@ -48,7 +55,6 @@ jobs:
   oidc-conformance:
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: false
       matrix:
         script:
           - code
@@ -66,7 +72,7 @@ jobs:
       - uses: actions/setup-node@v1
         with:
           node-version: 12
-      - run: npm install
+      - run: npx panva/npm-install-retry
       - run: node certification/docker &
         env:
           ISSUER: https://172.17.0.1:3000
@@ -79,7 +85,7 @@ jobs:
         run: |
             cd oidc-provider-conformance-tests
             git checkout local-certification
-            npm install
+            npx panva/npm-install-retry
             npm run ${{ matrix.script }}
 
   fapi-conformance:
@@ -91,15 +97,16 @@ jobs:
         run: |
           git clone https://gitlab.com/openid/conformance-suite.git
           cd conformance-suite
-          git checkout release-v3.2.7
+          git checkout release-v3.3.1
           sed -i -e 's/localhost/localhost.emobix.co.uk/g' src/main/resources/application.properties
+          sed -i -e 's/-B/-B -DskipTests=true/g' builder-compose.yml
           docker-compose -f builder-compose.yml run builder
           docker-compose -f docker-compose-dev.yml up -d
           while ! curl -skfail https://localhost.emobix.co.uk:8443/api/runner/available >/dev/null; do sleep 2; done
       - uses: actions/setup-node@v1
         with:
           node-version: 12
-      - run: npm install
+      - run: npx panva/npm-install-retry
       - run: node certification/fapi &
         env:
           ISSUER: https://172.17.0.1:3000
@@ -112,34 +119,34 @@ jobs:
           sed -i -e 's/mtls.fapi.panva.cz/172.17.0.1:3000/g' certification/fapi/pkjwt.json
           sed -i -e 's/fapi.panva.cz/172.17.0.1:3000/g' certification/fapi/pkjwt.json
       - name: Run private_key_jwt variant
-        run: node certification/fapi/runner
+        run: npx mocha --delay --timeout 0 --retries 2 certification/fapi/runner
         env:
           PLAN_NAME: fapi-rw-id2-test-plan
-          VARIANT: private_key_jwt
+          VARIANT: '{"client_auth_type":"private_key_jwt","fapi_profile":"plain_fapi","fapi_response_mode":"plain_response"}'
           CONFIGURATION: ./certification/fapi/pkjwt.json
           SUITE_BASE_URL: https://localhost.emobix.co.uk:8443
           NODE_TLS_REJECT_UNAUTHORIZED: 0
       - name: Run mtls variant
-        run: node certification/fapi/runner
+        run: npx mocha --delay --timeout 0 --retries 2 certification/fapi/runner
         env:
           PLAN_NAME: fapi-rw-id2-test-plan
-          VARIANT: mtls
+          VARIANT: '{"client_auth_type":"mtls","fapi_profile":"plain_fapi","fapi_response_mode":"plain_response"}'
           CONFIGURATION: ./certification/fapi/mtls.json
           SUITE_BASE_URL: https://localhost.emobix.co.uk:8443
           NODE_TLS_REJECT_UNAUTHORIZED: 0
       - name: Run private_key_jwt-jarm variant
-        run: node certification/fapi/runner
+        run: npx mocha --delay --timeout 0 --retries 2 certification/fapi/runner
         env:
           PLAN_NAME: fapi-rw-id2-test-plan
-          VARIANT: private_key_jwt-jarm
+          VARIANT: '{"client_auth_type":"private_key_jwt","fapi_profile":"plain_fapi","fapi_response_mode":"jarm"}'
           CONFIGURATION: ./certification/fapi/pkjwt.json
           SUITE_BASE_URL: https://localhost.emobix.co.uk:8443
           NODE_TLS_REJECT_UNAUTHORIZED: 0
       - name: Run mtls-jarm variant
-        run: node certification/fapi/runner
+        run: npx mocha --delay --timeout 0 --retries 2 certification/fapi/runner
         env:
           PLAN_NAME: fapi-rw-id2-test-plan
-          VARIANT: mtls-jarm
+          VARIANT: '{"client_auth_type":"mtls","fapi_profile":"plain_fapi","fapi_response_mode":"jarm"}'
           CONFIGURATION: ./certification/fapi/mtls.json
           SUITE_BASE_URL: https://localhost.emobix.co.uk:8443
           NODE_TLS_REJECT_UNAUTHORIZED: 0
@@ -152,7 +159,6 @@ jobs:
       - oidc-conformance
       - fapi-conformance
     strategy:
-      fail-fast: false
       matrix:
         app:
           - radiant-refuge-93411
@@ -162,5 +168,5 @@ jobs:
       - uses: actions/setup-ruby@v1
         with:
           ruby-version: 2.x
-      - run: gem install dpl
-      - run: dpl --provider=heroku --strategy=git --api-key=${{ secrets.HEROKU_AUTH_TOKEN }} --app=${{ matrix.app }}
+      - run: gem install dpl-heroku -v 1.10.14
+      - run: dpl --provider=heroku --strategy=api --api-key=${{ secrets.HEROKU_AUTH_TOKEN }} --app=${{ matrix.app }}

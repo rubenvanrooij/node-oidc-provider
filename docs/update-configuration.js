@@ -12,10 +12,11 @@ const values = require('../lib/helpers/defaults');
 
 values.ttl.RefreshToken[inspect.custom] = () => (
   values.ttl.RefreshToken.toString()
-    .replace('RefreshToken(', 'function (')
     .replace(/ {6}/g, '  ')
     .replace(/\s+}$/, '\n}')
 );
+
+values.interactions.policy[inspect.custom] = () => readFileSync('./docs/checks.txt').toString();
 
 function capitalizeSentences(copy) {
   return copy.replace(/\. [a-z]/g, (match) => `. ${match.slice(-1).toUpperCase()}`);
@@ -207,7 +208,7 @@ const props = [
 
     if (heading.length > 3 && !hidden) {
       hidden = true;
-      append(`<details>\n  <summary>(Click to expand) ${prev} options details</summary>\n  <br>\n\n`);
+      append(`\n<details><summary>(Click to expand) ${prev} options details</summary><br>\n\n`);
     } else if (hidden && heading.length === 3) {
       hidden = false;
       append('\n</details>\n');
@@ -242,13 +243,9 @@ const props = [
         case 'string':
         case 'undefined':
         case 'object': {
-          let output;
-          if (block === 'interactions.policy') {
-            output = readFileSync('./docs/checks.txt');
-          }
-          output = output || inspect(value, { compact: false, sorted: true });
+          const output = inspect(value, { compact: false, sorted: true });
           append(expand(output).split('\n').map((line) => {
-            line = line.replace(/(\[(?:Async)?Function: \w+\],)/, '$1 // see expanded details below');
+            line = line.replace(/(\[(?:Async)?Function: \w+\],?)/, '$1 // see expanded details below');
             return line;
           }).join('\n'));
           break;
@@ -263,7 +260,9 @@ const props = [
             }
             if (line.includes('shouldChange')) return undefined;
             if (line.includes('mustChange')) return undefined;
-            if (line.startsWith(' ')) line = line.slice(fixIndent);
+            if (line.startsWith(' ')) {
+              line = line.replace(new RegExp(`^( {0,${fixIndent}})`), '');
+            }
             line = line.replace(/ \/\/ eslint-disable.+/, '');
             if (line.includes('/* eslint-disable')) {
               return undefined;
@@ -281,7 +280,8 @@ const props = [
             }
             if (line.includes('<style>')) {
               mute = true;
-              return '<style>/* css and html classes omitted for brevity, see lib/helpers/defaults.js */</style>';
+              line.match(/^(\s+)/);
+              return `${' '.repeat(Math.max(fixIndent, RegExp.$1.length))}<style>/* css and html classes omitted for brevity, see lib/helpers/defaults.js */</style>`;
             }
             if (line.includes('</style>')) {
               mute = false;
@@ -300,8 +300,8 @@ const props = [
 
     Object.keys(section).filter((p) => p.startsWith('example')).forEach((prop) => {
       const [title, ...content] = section[prop];
-      append(`<a name="${words(`${headingTitle} ${title}`).map((w) => w.toLowerCase()).join('-')}"></a>`.replace('\n', ''));
-      append(`<details>\n  <summary>(Click to expand) ${title}</summary>\n  <br>\n\n`);
+      append(`<a id="${words(`${headingTitle} ${title}`).map((w) => w.toLowerCase()).join('-')}"></a>`.replace('\n', ''));
+      append(`<details><summary>(Click to expand) ${title}</summary><br>\n\n`);
 
       const parts = [];
       let incode;

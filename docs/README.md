@@ -20,76 +20,20 @@ If you or your business use oidc-provider, please consider becoming a [sponsor][
 **Table of Contents**
 
 - [Basic configuration example](#basic-configuration-example)
-- [Default configuration values](#default-configuration-values)
 - [Accounts](#accounts)
 - [User flows](#user-flows)
 - [Custom Grant Types ❗](#custom-grant-types)
 - [Registering module middlewares (helmet, ip-filters, rate-limiters, etc)](#registering-module-middlewares-helmet-ip-filters-rate-limiters-etc)
 - [Pre- and post-middlewares ❗](#pre--and-post-middlewares)
 - [Mounting oidc-provider](#mounting-oidc-provider)
-  - [to an express application](#to-an-express-application)
+  - [to a connect application](#to-a-connect-application)
+  - [to a fastify application](#to-a-fastify-application)
+  - [to a hapi application](#to-a-hapi-application)
   - [to a koa application](#to-a-koa-application)
+  - [to an express application](#to-an-express-application)
 - [Trusting TLS offloading proxies ❗](#trusting-tls-offloading-proxies)
-- [Configuration options](#configuration-options)
-  - [adapter ❗](#adapter)
-  - [clients ❗](#clients)
-  - [findAccount ❗](#findaccount)
-  - [jwks ❗](#jwks)
-  - [features ❗](#features)
-    - [backchannelLogout](#featuresbackchannellogout)
-    - [claimsParameter](#featuresclaimsparameter)
-    - [clientCredentials](#featuresclientcredentials)
-    - [deviceFlow](#featuresdeviceflow)
-    - [devInteractions](#featuresdevinteractions)
-    - [dPoP](#featuresdpop)
-    - [encryption](#featuresencryption)
-    - [fapiRW](#fapi)
-    - [frontchannelLogout](#featuresfrontchannellogout)
-    - [ietfJWTAccessTokenProfile](#featuresietfjwtaccesstokenprofile)
-    - [introspection](#featuresintrospection)
-    - [jwtIntrospection](#featuresjwtintrospection)
-    - [jwtResponseModes](#featuresjwtresponsemodes)
-    - [jwtUserinfo](#featuresjwtuserinfo)
-    - [mTLS](#featuresmtls)
-    - [pushedAuthorizationRequests](#featurespushedauthorizationrequests)
-    - [registration](#featuresregistration)
-    - [registrationManagement](#featuresregistrationmanagement)
-    - [requestObjects](#featuresrequestobjects)
-    - [resourceIndicators](#featuresresourceindicators)
-    - [revocation](#featuresrevocation)
-    - [sessionManagement](#featuressessionmanagement)
-    - [userinfo](#featuresuserinfo)
-    - [webMessageResponseMode](#featureswebmessageresponsemode)
-  - [acrValues](#acrvalues)
-  - [audiences](#audiences)
-  - [claims ❗](#claims)
-  - [clientBasedCORS](#clientbasedcors)
-  - [clientDefaults](#clientdefaults)
-  - [clockTolerance](#clocktolerance)
-  - [conformIdTokenClaims ❗](#conformidtokenclaims)
-  - [cookies](#cookies)
-  - [discovery](#discovery)
-  - [dynamicScopes](#dynamicscopes)
-  - [expiresWithSession](#expireswithsession)
-  - [extraClientMetadata](#extraclientmetadata)
-  - [extraParams](#extraparams)
-  - [formats](#formats)
-  - [httpOptions](#httpoptions)
-  - [interactions ❗](#interactions)
-  - [issueRefreshToken](#issuerefreshtoken)
-  - [logoutSource](#logoutsource)
-  - [pairwiseIdentifier](#pairwiseidentifier)
-  - [pkceMethods](#pkcemethods)
-  - [postLogoutSuccessSource](#postlogoutsuccesssource)
-  - [renderError](#rendererror)
-  - [responseTypes](#responsetypes)
-  - [rotateRefreshToken](#rotaterefreshtoken)
-  - [routes](#routes)
-  - [scopes](#scopes)
-  - [subjectTypes](#subjecttypes)
-  - [tokenEndpointAuthMethods](#tokenendpointauthmethods)
-  - [ttl ❗](#ttl)
-  - [whitelistedJWA](#whitelistedjwa)
+- [Configuration options ❗](#configuration-options)
+- [FAQ ❗](#faq)
 
 
 
@@ -130,11 +74,6 @@ const server = oidc.listen(3000, () => {
 ```
 
 
-## Default configuration values
-Default values are available for all configuration options. Available in [code][defaults] as well as
-in this [document](#configuration-options).
-
-
 ## Accounts
 
 oidc-provider needs to be able to find an account and once found the account needs to have an
@@ -159,9 +98,10 @@ Since oidc-provider only comes with feature-less views and interaction handlers 
 those in, here is how oidc-provider allows you to do so:
 
 When oidc-provider cannot fulfill the authorization request for any of the possible reasons (missing
-user session, requested ACR not fulfilled, prompt requested, ...) it will resolve an `interactionUrl`
-(configurable) and redirect the User-Agent to that url. Before doing so it will save a short-lived
-session and dump its identifier into a cookie scoped to the resolved interaction path.
+user session, requested ACR not fulfilled, prompt requested, ...) it will resolve an the
+(configurable )`interactions.url` helper function and redirect the User-Agent to that url. Before
+doing so it will save a short-lived session and dump its identifier into a cookie scoped to the
+resolved interaction path.
 
 This session contains:
 
@@ -304,8 +244,8 @@ router.post('/interaction/:uid/login', async (ctx, next) => {
 
 ## Custom Grant Types
 oidc-provider comes with the basic grants implemented, but you can register your own grant types,
-for example to implement an [OAuth 2.0 Token Exchange][token-exchange]. You can check the standard
-grant factories [here](/lib/actions/grants).
+for example to implement an [OAuth 2.0 Token Exchange](https://tools.ietf.org/html/rfc8693). You can
+check the standard grant factories [here](/lib/actions/grants).
 
 ```js
 const parameters = [
@@ -372,6 +312,7 @@ provider.use(async (ctx, next) => {
    * `cors.discovery`
    * `cors.introspection`
    * `cors.jwks`
+   * `cors.pushed_authorization_request`
    * `cors.revocation`
    * `cors.token`
    * `cors.userinfo`
@@ -383,6 +324,7 @@ provider.use(async (ctx, next) => {
    * `end_session`
    * `introspection`
    * `jwks`
+   * `pushed_authorization_request`
    * `registration`
    * `resume`
    * `revocation`
@@ -397,20 +339,66 @@ provider.use(async (ctx, next) => {
 The following snippets show how a provider instance can be mounted to existing applications with a
 path prefix.
 
-### to an express application
+### to a `connect` application
+```js
+// assumes connect ^3.0.0
+const prefix = '/oidc';
+connectApp.use(prefix, oidc.callback);
+```
+
+### to a `fastify` application
+```js
+// assumes fastify ^2.0.0
+const prefix = '/oidc';
+fastifyApp.use(prefix, oidc.callback);
+```
+
+### to a `hapi` application
+```js
+// assumes @hapi/hapi ^18.0.0
+const prefix = '/oidc';
+const { callback } = oidc;
+hapiApp.route({
+  path: `${prefix}/{any*}`,
+  method: '*',
+  config: { payload: { output: 'stream', parse: false } },
+  async handler({ raw: { req, res } }, h) {
+    req.originalUrl = req.url;
+    req.url = req.url.replace(prefix, '');
+
+    await new Promise((resolve) => {
+      res.on('finish', resolve);
+      callback(req, res);
+    });
+
+    req.url = req.url.replace('/', prefix);
+    delete req.originalUrl;
+
+    return res.finished ? h.abandon : h.continue;
+  }
+});
+```
+
+### to an `express` application
 ```js
 // assumes express ^4.0.0
 const prefix = '/oidc';
 expressApp.use(prefix, oidc.callback);
 ```
 
-### to a koa application
+### to a `koa` application
 ```js
 // assumes koa ^2.0.0
+// assumes koa-mount ^4.0.0
 const mount = require('koa-mount');
 const prefix = '/oidc';
 koaApp.use(mount(prefix, oidc.app));
 ```
+
+Note: when the issuer identifier does not include the path prefix you should take care of rewriting
+your `${root}/.well-known/openid-configuration` to `${root}${prefix}/.well-known/openid-configuration`
+so that your deployment remains conform to the
+[Discovery 1.0](https://openid.net/specs/openid-connect-discovery-1_0.html) specification.
 
 ## Trusting TLS offloading proxies
 
@@ -426,11 +414,12 @@ application code
 
 | setup | example |
 |---|---|
-| standalone oidc-provider | `provider.proxy = true; ` |
-| oidc-provider mounted to a koa app | `yourKoaApp.proxy = true` |
-| oidc-provider mounted to an express app | `provider.proxy = true; ` |
-
-See http://koajs.com/#settings and the [example](/example/index.js).
+| standalone oidc-provider | `provider.proxy = true` |
+| oidc-provider mounted to an `express` application | `provider.proxy = true` |
+| oidc-provider mounted to a `connect` application | `provider.proxy = true` |
+| oidc-provider mounted to a `koa` application | `yourKoaApp.proxy = true` |
+| oidc-provider mounted to a `fastify` application | `provider.proxy = true` |
+| oidc-provider mounted to a `hapi` application | `provider.proxy = true` |
 
 It is also necessary that the web server doing the offloading also passes
 those headers to the downstream application. Here is a common configuration
@@ -453,6 +442,70 @@ location / {
 
 ## Configuration options
 
+**Table of Contents**
+
+- [adapter ❗](#adapter)
+- [clients ❗](#clients)
+- [findAccount ❗](#findaccount)
+- [jwks ❗](#jwks)
+- [features ❗](#features)
+  - [backchannelLogout](#featuresbackchannellogout)
+  - [claimsParameter](#featuresclaimsparameter)
+  - [clientCredentials](#featuresclientcredentials)
+  - [deviceFlow](#featuresdeviceflow)
+  - [devInteractions](#featuresdevinteractions)
+  - [dPoP](#featuresdpop)
+  - [encryption](#featuresencryption)
+  - [fapiRW](#featuresfapirw)
+  - [frontchannelLogout](#featuresfrontchannellogout)
+  - [ietfJWTAccessTokenProfile](#featuresietfjwtaccesstokenprofile)
+  - [introspection](#featuresintrospection)
+  - [jwtIntrospection](#featuresjwtintrospection)
+  - [jwtResponseModes](#featuresjwtresponsemodes)
+  - [jwtUserinfo](#featuresjwtuserinfo)
+  - [mTLS](#featuresmtls)
+  - [pushedAuthorizationRequests](#featurespushedauthorizationrequests)
+  - [registration](#featuresregistration)
+  - [registrationManagement](#featuresregistrationmanagement)
+  - [requestObjects](#featuresrequestobjects)
+  - [resourceIndicators](#featuresresourceindicators)
+  - [revocation](#featuresrevocation)
+  - [secp256k1](#featuressecp256k1)
+  - [sessionManagement](#featuressessionmanagement)
+  - [userinfo](#featuresuserinfo)
+  - [webMessageResponseMode](#featureswebmessageresponsemode)
+- [acrValues](#acrvalues)
+- [audiences](#audiences)
+- [claims ❗](#claims)
+- [clientBasedCORS](#clientbasedcors)
+- [clientDefaults](#clientdefaults)
+- [clockTolerance](#clocktolerance)
+- [conformIdTokenClaims ❗](#conformidtokenclaims)
+- [cookies](#cookies)
+- [discovery](#discovery)
+- [dynamicScopes](#dynamicscopes)
+- [expiresWithSession](#expireswithsession)
+- [extraAccessTokenClaims](#extraaccesstokenclaims)
+- [extraClientMetadata](#extraclientmetadata)
+- [extraParams](#extraparams)
+- [formats](#formats)
+- [httpOptions](#httpoptions)
+- [interactions ❗](#interactions)
+- [issueRefreshToken](#issuerefreshtoken)
+- [logoutSource](#logoutsource)
+- [pairwiseIdentifier](#pairwiseidentifier)
+- [pkceMethods](#pkcemethods)
+- [postLogoutSuccessSource](#postlogoutsuccesssource)
+- [renderError](#rendererror)
+- [responseTypes](#responsetypes)
+- [rotateRefreshToken](#rotaterefreshtoken)
+- [routes](#routes)
+- [scopes](#scopes)
+- [subjectTypes](#subjecttypes)
+- [tokenEndpointAuthMethods](#tokenendpointauthmethods)
+- [ttl ❗](#ttl)
+- [whitelistedJWA](#whitelistedjwa)
+
 <!-- DO NOT EDIT, COMMIT OR STAGE CHANGES BELOW THIS LINE -->
 <!-- START CONF OPTIONS -->
 ### adapter
@@ -460,36 +513,28 @@ location / {
 The provided example and any new instance of oidc-provider will use the basic in-memory adapter for storing issued tokens, codes, user sessions, dynamically registered clients, etc. This is fine as long as you develop, configure and generally just play around since every time you restart your process all information will be lost. As soon as you cannot live with this limitation you will be required to provide your own custom adapter constructor for oidc-provider to use. This constructor will be called for every model accessed the first time it is needed. The API oidc-provider expects is documented [here](/example/my_adapter.js).   
   
 
-<a name="adapter-mongo-db-adapter-implementation"></a><details>
-  <summary>(Click to expand) MongoDB adapter implementation</summary>
-  <br>
+<a id="adapter-mongo-db-adapter-implementation"></a><details><summary>(Click to expand) MongoDB adapter implementation</summary><br>
 
 
 See [/example/adapters/mongodb.js](/example/adapters/mongodb.js)  
 
 
 </details>
-<a name="adapter-redis-adapter-implementation"></a><details>
-  <summary>(Click to expand) Redis adapter implementation</summary>
-  <br>
+<a id="adapter-redis-adapter-implementation"></a><details><summary>(Click to expand) Redis adapter implementation</summary><br>
 
 
 See [/example/adapters/redis.js](/example/adapters/redis.js)  
 
 
 </details>
-<a name="adapter-redis-w-re-json-adapter-implementation"></a><details>
-  <summary>(Click to expand) Redis w/ ReJSON adapter implementation</summary>
-  <br>
+<a id="adapter-redis-w-re-json-adapter-implementation"></a><details><summary>(Click to expand) Redis w/ ReJSON adapter implementation</summary><br>
 
 
 See [/example/adapters/redis_rejson.js](/example/adapters/redis_rejson.js)  
 
 
 </details>
-<a name="adapter-default-in-memory-adapter-implementation"></a><details>
-  <summary>(Click to expand) Default in-memory adapter implementation</summary>
-  <br>
+<a id="adapter-default-in-memory-adapter-implementation"></a><details><summary>(Click to expand) Default in-memory adapter implementation</summary><br>
 
 
 See [/lib/adapters/memory_adapter.js](/lib/adapters/memory_adapter.js)  
@@ -499,7 +544,7 @@ See [/lib/adapters/memory_adapter.js](/lib/adapters/memory_adapter.js)
 
 ### clients
 
-Array of objects representing client metadata. These clients are referred to as static, they don't expire, never reload, are always available. If the client metadata in this array is invalid the Provider instantiation will fail with an error. In addition to these clients the provider will use your adapter's `find` method when a non-cached client_id is encountered. If you only wish to support statically configured clients and no dynamic registration then make it so that your adapter resolves client find calls with a falsy value (e.g. `return Promise.resolve()`) and don't take unnecessary DB trips.   
+Array of objects representing client metadata. These clients are referred to as static, they don't expire, never reload, are always available. In addition to these clients the provider will use your adapter's `find` method when a non-static client_id is encountered. If you only wish to support statically configured clients and no dynamic registration then make it so that your adapter resolves client find calls with a falsy value (e.g. `return Promise.resolve()`) and don't take unnecessary DB trips.   
  Client's metadata is validated as defined by the respective specification they've been defined in.   
   
 
@@ -508,9 +553,7 @@ _**default value**_:
 ```js
 []
 ```
-<a name="clients-available-metadata"></a><details>
-  <summary>(Click to expand) Available Metadata</summary>
-  <br>
+<a id="clients-available-metadata"></a><details><summary>(Click to expand) Available Metadata</summary><br>
 
 
 application_type, client_id, client_name, client_secret, client_uri, contacts, default_acr_values, default_max_age, grant_types, id_token_signed_response_alg, initiate_login_uri, jwks, jwks_uri, logo_uri, policy_uri, post_logout_redirect_uris, redirect_uris, require_auth_time, response_types, scope, sector_identifier_uri, subject_type, token_endpoint_auth_method, tos_uri, userinfo_signed_response_alg <br/><br/>The following metadata is available but may not be recognized depending on your provider's configuration.<br/><br/> authorization_encrypted_response_alg, authorization_encrypted_response_enc, authorization_signed_response_alg, backchannel_logout_session_required, backchannel_logout_uri, frontchannel_logout_session_required, frontchannel_logout_uri, id_token_encrypted_response_alg, id_token_encrypted_response_enc, introspection_encrypted_response_alg, introspection_encrypted_response_enc, introspection_endpoint_auth_method, introspection_endpoint_auth_signing_alg, introspection_signed_response_alg, request_object_encryption_alg, request_object_encryption_enc, request_object_signing_alg, request_uris, revocation_endpoint_auth_method, revocation_endpoint_auth_signing_alg, tls_client_auth_san_dns, tls_client_auth_san_email, tls_client_auth_san_ip, tls_client_auth_san_uri, tls_client_auth_subject_dn, tls_client_certificate_bound_access_tokens, token_endpoint_auth_signing_alg, userinfo_encrypted_response_alg, userinfo_encrypted_response_enc, web_message_uris  
@@ -525,7 +568,7 @@ Function used to load an account and retrieve its available claims. The return v
 
 _**default value**_:
 ```js
-async findAccount(ctx, sub, token) {
+async function findAccount(ctx, sub, token) {
   // @param ctx - koa request context
   // @param sub {string} - account identifier (subject)
   // @param token - is a reference to the token used for which a given account is being loaded,
@@ -556,7 +599,7 @@ JSON Web Key Set used by the provider for signing and encryption. The object mus
  Supported key types are:   
  - RSA
  - OKP (Ed25519 and Ed448 curves)
- - EC (P-256, P-384 and P-521 curves)   
+ - EC (P-256, secp256k1, P-384, and P-521 curves)   
   
 
 _**recommendation**_: **Provider key rotation** - The following action order is recommended when rotating signing keys on a distributed deployment with rolling reloads in place.
@@ -565,24 +608,17 @@ _**recommendation**_: **Provider key rotation** - The following action order is 
  3. move your new key to the very front of the "keys" array in your JWKS, this means the key will be used for signing after reload
  4. reload all your processes  
 
-<a name="jwks-generating-keys"></a><details>
-  <summary>(Click to expand) Generating keys
-</summary>
-  <br>
+<a id="jwks-generating-keys"></a><details><summary>(Click to expand) Generating keys
+</summary><br>
 
 ```js
 const { JWKS: { KeyStore } } = require('jose');
 const keystore = new KeyStore();
-keystore.generateSync('RSA', 2048, {
-  alg: 'RS256',
-  use: 'sig',
-});
+keystore.generateSync('RSA', 2048, { alg: 'RS256', use: 'sig' });
 console.log('this is the full private JWKS:\n', keystore.toJWKS(true));
 ```
 </details>
-<a name="jwks-generating-keys-for-both-signing-and-encryption"></a><details>
-  <summary>(Click to expand) Generating keys for both signing and encryption</summary>
-  <br>
+<a id="jwks-generating-keys-for-both-signing-and-encryption"></a><details><summary>(Click to expand) Generating keys for both signing and encryption</summary><br>
 
 
 Re-using the same keys for both encryption and signing is discouraged so it is best to generate one with `{ use: 'sig' }` and another with `{ use: 'enc' }`, e.g.
@@ -592,21 +628,11 @@ Re-using the same keys for both encryption and signing is discouraged so it is b
 const { JWKS: { KeyStore } } = require('jose');
 const keystore = new KeyStore();
 Promise.all([
-  keystore.generate('RSA', 2048, {
-    use: 'sig',
-  }),
-  keystore.generate('RSA', 2048, {
-    use: 'enc',
-  }),
-  keystore.generate('EC', 'P-256', {
-    use: 'sig',
-  }),
-  keystore.generate('EC', 'P-256', {
-    use: 'enc',
-  }),
-  keystore.generate('OKP', 'Ed25519', {
-    use: 'sig',
-  }),
+  keystore.generate('RSA', 2048, { use: 'sig' }),
+  keystore.generate('RSA', 2048, { use: 'enc' }),
+  keystore.generate('EC', 'P-256', { use: 'sig' }),
+  keystore.generate('EC', 'P-256', { use: 'enc' }),
+  keystore.generate('OKP', 'Ed25519', { use: 'sig' }),
 ]).then(function () {
   console.log('this is the full private JWKS:\n', keystore.toJWKS(true));
 });
@@ -618,10 +644,8 @@ Promise.all([
 Enable/disable features. Some features are still either based on draft or experimental RFCs. Enabling those will produce a warning in your console and you must be aware that breaking changes may occur between draft implementations and that those will be published as minor versions of oidc-provider. See the example below on how to acknowledge the specification is a draft (this will remove the warning log) and ensure the provider instance will fail to instantiate if a new version of oidc-provider bundles newer version of the RFC with breaking changes in it.   
   
 
-<a name="features-acknowledging-a-draft-experimental-feature"></a><details>
-  <summary>(Click to expand) Acknowledging a draft / experimental feature
-</summary>
-  <br>
+<a id="features-acknowledging-a-draft-experimental-feature"></a><details><summary>(Click to expand) Acknowledging a draft / experimental feature
+</summary><br>
 
 ```js
 new Provider('http://localhost:3000', {
@@ -707,9 +731,9 @@ _**default value**_:
 
 ### features.dPoP
 
-[draft-fett-oauth-dpop-02](https://tools.ietf.org/html/draft-fett-oauth-dpop-02) - OAuth 2.0 Demonstration of Proof-of-Possession at the Application Layer  
+[draft-ietf-oauth-dpop-01](https://tools.ietf.org/html/draft-ietf-oauth-dpop-01) - OAuth 2.0 Demonstration of Proof-of-Possession at the Application Layer  
 
-Enables `DPoP` - mechanism for sender-constraining tokens via a proof-of-possession mechanism on the application level  
+Enables `DPoP` - mechanism for sender-constraining tokens via a proof-of-possession mechanism on the application level. Browser DPoP Proof generation [here](https://www.npmjs.com/package/dpop).  
 
 
 _**default value**_:
@@ -749,12 +773,11 @@ _**default value**_:
   mask: '****-****',
   successSource: [AsyncFunction: successSource], // see expanded details below
   userCodeConfirmSource: [AsyncFunction: userCodeConfirmSource], // see expanded details below
-  userCodeInputSource: [AsyncFunction: userCodeInputSource]
+  userCodeInputSource: [AsyncFunction: userCodeInputSource] // see expanded details below
 }
 ```
-<details>
-  <summary>(Click to expand) features.deviceFlow options details</summary>
-  <br>
+
+<details><summary>(Click to expand) features.deviceFlow options details</summary><br>
 
 
 #### charset
@@ -776,7 +799,7 @@ Function used to extract details from the device authorization endpoint request.
 
 _**default value**_:
 ```js
-deviceInfo(ctx) {
+function deviceInfo(ctx) {
   return {
     ip: ctx.ip,
     ua: ctx.get('user-agent'),
@@ -801,23 +824,23 @@ HTML source rendered when device code feature renders a success page for the Use
 
 _**default value**_:
 ```js
-async successSource(ctx) {
+async function successSource(ctx) {
   // @param ctx - koa request context
   const {
     clientId, clientName, clientUri, initiateLoginUri, logoUri, policyUri, tosUri,
   } = ctx.oidc.client;
   ctx.body = `<!DOCTYPE html>
-ead>
-<title>Sign-in Success</title>
-<style>/* css and html classes omitted for brevity, see lib/helpers/defaults.js */</style>
-head>
-ody>
-<div>
-  <h1>Sign-in Success</h1>
-  <p>Your sign-in ${clientName ? `with ${clientName}` : ''} was successful, you can now close this page.</p>
-</div>
-body>
-html>`;
+    <head>
+      <title>Sign-in Success</title>
+      <style>/* css and html classes omitted for brevity, see lib/helpers/defaults.js */</style>
+    </head>
+    <body>
+      <div>
+        <h1>Sign-in Success</h1>
+        <p>Your sign-in ${clientName ? `with ${clientName}` : ''} was successful, you can now close this page.</p>
+      </div>
+    </body>
+    </html>`;
 }
 ```
 
@@ -828,7 +851,7 @@ HTML source rendered when device code feature renders an a confirmation prompt f
 
 _**default value**_:
 ```js
-async userCodeConfirmSource(ctx, form, client, deviceInfo, userCode) {
+async function userCodeConfirmSource(ctx, form, client, deviceInfo, userCode) {
   // @param ctx - koa request context
   // @param form - form source (id="op.deviceConfirmForm") to be embedded in the page and
   //   submitted by the End-User.
@@ -838,29 +861,29 @@ async userCodeConfirmSource(ctx, form, client, deviceInfo, userCode) {
     clientId, clientName, clientUri, logoUri, policyUri, tosUri,
   } = ctx.oidc.client;
   ctx.body = `<!DOCTYPE html>
-ead>
-<title>Device Login Confirmation</title>
-<style>/* css and html classes omitted for brevity, see lib/helpers/defaults.js */</style>
-head>
-ody>
-<div>
-  <h1>Confirm Device</h1>
-  <p>
-    <strong>${clientName || clientId}</strong>
-    <br/><br/>
-    The following code should be displayed on your device<br/><br/>
-    <code>${userCode}</code>
-    <br/><br/>
-    <small>If you did not initiate this action, the code does not match or are unaware of such device in your possession please close this window or click abort.</small>
-  </p>
-  ${form}
-  <button autofocus type="submit" form="op.deviceConfirmForm">Continue</button>
-  <div>
-    <button type="submit" form="op.deviceConfirmForm" value="yes" name="abort">[ Abort ]</button>
-  </div>
-</div>
-body>
-html>`;
+    <head>
+      <title>Device Login Confirmation</title>
+      <style>/* css and html classes omitted for brevity, see lib/helpers/defaults.js */</style>
+    </head>
+    <body>
+      <div>
+        <h1>Confirm Device</h1>
+        <p>
+          <strong>${clientName || clientId}</strong>
+          <br/><br/>
+          The following code should be displayed on your device<br/><br/>
+          <code>${userCode}</code>
+          <br/><br/>
+          <small>If you did not initiate this action, the code does not match or are unaware of such device in your possession please close this window or click abort.</small>
+        </p>
+        ${form}
+        <button autofocus type="submit" form="op.deviceConfirmForm">Continue</button>
+        <div>
+          <button type="submit" form="op.deviceConfirmForm" value="yes" name="abort">[ Abort ]</button>
+        </div>
+      </div>
+    </body>
+    </html>`;
 }
 ```
 
@@ -871,7 +894,7 @@ HTML source rendered when device code feature renders an input prompt for the Us
 
 _**default value**_:
 ```js
-async userCodeInputSource(ctx, form, out, err) {
+async function userCodeInputSource(ctx, form, out, err) {
   // @param ctx - koa request context
   // @param form - form source (id="op.deviceInputForm") to be embedded in the page and submitted
   //   by the End-User.
@@ -890,19 +913,19 @@ async userCodeInputSource(ctx, form, out, err) {
     msg = '<p>Enter the code displayed on your device</p>';
   }
   ctx.body = `<!DOCTYPE html>
-ead>
-<title>Sign-in</title>
-<style>/* css and html classes omitted for brevity, see lib/helpers/defaults.js */</style>
-head>
-ody>
-<div>
-  <h1>Sign-in</h1>
-  ${msg}
-  ${form}
-  <button type="submit" form="op.deviceInputForm">Continue</button>
-</div>
-body>
-html>`;
+    <head>
+      <title>Sign-in</title>
+      <style>/* css and html classes omitted for brevity, see lib/helpers/defaults.js */</style>
+    </head>
+    <body>
+      <div>
+        <h1>Sign-in</h1>
+        ${msg}
+        ${form}
+        <button type="submit" form="op.deviceInputForm">Continue</button>
+      </div>
+    </body>
+    </html>`;
 }
 ```
 
@@ -936,10 +959,8 @@ _**default value**_:
   enabled: false
 }
 ```
-<a name="features-fapi-rw-other-configuration-needed-to-reach-fapi-levels"></a><details>
-  <summary>(Click to expand) other configuration needed to reach FAPI levels
-</summary>
-  <br>
+<a id="features-fapi-rw-other-configuration-needed-to-reach-fapi-levels"></a><details><summary>(Click to expand) other configuration needed to reach FAPI levels
+</summary><br>
 
 
 - `clientDefaults` for setting different default client `token_endpoint_auth_method`
@@ -952,7 +973,7 @@ _**default value**_:
  - `features.requestObjects` and enable `request` and/or `request_uri`
  - `features.requestObjects.mergingStrategy.name` set to `strict`
  - `whitelistedJWA`
- - (optional) `features.pushedAuthorizationRequest`
+ - (optional) `features.pushedAuthorizationRequests`
  - (optional) `features.jwtResponseModes`  
 
 
@@ -962,19 +983,19 @@ _**default value**_:
 
 [Front-Channel Logout 1.0 - draft 02](https://openid.net/specs/openid-connect-frontchannel-1_0-02.html)  
 
-Enables Front-Channel Logout features  
+Enables Front-Channel Logout features   
+ Note: Browsers blocking access to cookies from a third party context hinder the reliability of this standard.  
 
 
 _**default value**_:
 ```js
 {
   enabled: false,
-  logoutPendingSource: [AsyncFunction: logoutPendingSource]
+  logoutPendingSource: [AsyncFunction: logoutPendingSource] // see expanded details below
 }
 ```
-<details>
-  <summary>(Click to expand) features.frontchannelLogout options details</summary>
-  <br>
+
+<details><summary>(Click to expand) features.frontchannelLogout options details</summary><br>
 
 
 #### logoutPendingSource
@@ -984,36 +1005,36 @@ HTML source rendered when there are pending front-channel logout iframes to be c
 
 _**default value**_:
 ```js
-async logoutPendingSource(ctx, frames, postLogoutRedirectUri) {
+async function logoutPendingSource(ctx, frames, postLogoutRedirectUri) {
   ctx.body = `<!DOCTYPE html>
-ead>
-<title>Logout</title>
-<style>/* css and html classes omitted for brevity, see lib/helpers/defaults.js */</style>
-head>
-ody>
-${frames.join('')}
-<script>
-  var loaded = 0;
-  function redirect() {
-    window.location.replace("${postLogoutRedirectUri}");
-  }
-  function frameOnLoad() {
-    loaded += 1;
-    if (loaded === ${frames.length}) {
-      redirect();
-    }
-  }
-  Array.prototype.slice.call(document.querySelectorAll('iframe')).forEach(function (element) {
-    element.onload = frameOnLoad;
-  });
-  setTimeout(redirect, 2500);
-</script>
-<noscript>
-  Your browser does not support JavaScript or you've disabled it.<br/>
-  <a href="${postLogoutRedirectUri}">Continue</a>
-</noscript>
-body>
-html>`;
+    <head>
+      <title>Logout</title>
+      <style>/* css and html classes omitted for brevity, see lib/helpers/defaults.js */</style>
+    </head>
+    <body>
+      ${frames.join('')}
+      <script>
+        var loaded = 0;
+        function redirect() {
+          window.location.replace("${postLogoutRedirectUri}");
+        }
+        function frameOnLoad() {
+          loaded += 1;
+          if (loaded === ${frames.length}) {
+            redirect();
+          }
+        }
+        Array.prototype.slice.call(document.querySelectorAll('iframe')).forEach(function (element) {
+          element.onload = frameOnLoad;
+        });
+        setTimeout(redirect, 2500);
+      </script>
+      <noscript>
+        Your browser does not support JavaScript or you've disabled it.<br/>
+        <a href="${postLogoutRedirectUri}">Continue</a>
+      </noscript>
+    </body>
+    </html>`;
 }
 ```
 
@@ -1021,7 +1042,7 @@ html>`;
 
 ### features.ietfJWTAccessTokenProfile
 
-[draft-ietf-oauth-access-token-jwt-02](https://tools.ietf.org/html/draft-ietf-oauth-access-token-jwt-02) - JSON Web Token (JWT) Profile for OAuth 2.0 Access Tokens  
+[draft-ietf-oauth-access-token-jwt-05](https://tools.ietf.org/html/draft-ietf-oauth-access-token-jwt-05) - JSON Web Token (JWT) Profile for OAuth 2.0 Access Tokens  
 
 Enables the use of `jwt-ietf` JWT Access Token format   
   
@@ -1045,13 +1066,34 @@ Enables Token Introspection features
 _**default value**_:
 ```js
 {
+  allowedPolicy: [AsyncFunction: allowedPolicy], // see expanded details below
   enabled: false
 }
 ```
 
+<details><summary>(Click to expand) features.introspection options details</summary><br>
+
+
+#### allowedPolicy
+
+Helper function used to determine whether the client/RS (client argument) is allowed to introspect the given token (token argument).  
+
+
+_**default value**_:
+```js
+async function allowedPolicy(ctx, client, token) {
+  if (client.introspectionEndpointAuthMethod === 'none' && token.clientId !== ctx.oidc.client.clientId) {
+    return false;
+  }
+  return true;
+}
+```
+
+</details>
+
 ### features.jwtIntrospection
 
-[draft-ietf-oauth-jwt-introspection-response-08](https://tools.ietf.org/html/draft-ietf-oauth-jwt-introspection-response-08) - JWT Response for OAuth Token Introspection  
+[draft-ietf-oauth-jwt-introspection-response-09](https://tools.ietf.org/html/draft-ietf-oauth-jwt-introspection-response-09) - JWT Response for OAuth Token Introspection  
 
 Enables JWT responses for Token Introspection features   
   
@@ -1095,7 +1137,7 @@ _**default value**_:
 
 ### features.mTLS
 
-[draft-ietf-oauth-mtls-17](https://tools.ietf.org/html/draft-ietf-oauth-mtls-17) - OAuth 2.0 Mutual TLS Client Authentication and Certificate Bound Access Tokens  
+[RFC 8705](https://tools.ietf.org/html/rfc8705) - OAuth 2.0 Mutual TLS Client Authentication and Certificate Bound Access Tokens  
 
 Enables specific features from the Mutual TLS specification. The three main features have their own specific setting in this feature's configuration object and you must provide functions for resolving some of the functions which are deployment-specific. Note: **This feature is only supported in node runtime >= 12.0.0**   
   
@@ -1113,9 +1155,8 @@ _**default value**_:
   tlsClientAuth: false
 }
 ```
-<details>
-  <summary>(Click to expand) features.mTLS options details</summary>
-  <br>
+
+<details><summary>(Click to expand) features.mTLS options details</summary><br>
 
 
 #### certificateAuthorized
@@ -1123,9 +1164,7 @@ _**default value**_:
 Function used to determine if the client certificate, used in the request, is verified and comes from a trusted CA for the client. Should return true/false. Only used for `tls_client_auth` client authentication method.   
   
 
-<a name="certificate-authorized-when-behind-a-tls-terminating-proxy-nginx-apache"></a><details>
-  <summary>(Click to expand) When behind a TLS terminating proxy (nginx/apache)</summary>
-  <br>
+<a id="certificate-authorized-when-behind-a-tls-terminating-proxy-nginx-apache"></a><details><summary>(Click to expand) When behind a TLS terminating proxy (nginx/apache)</summary><br>
 
 
 When behind a TLS terminating proxy it is common that this detail be passed to the application as a sanitized header. This returns the chosen header value provided by nginx's `$ssl_client_verify` or apache's `%{SSL_CLIENT_VERIFY}s`
@@ -1137,10 +1176,8 @@ function certificateAuthorized(ctx) {
 }
 ```
 </details>
-<a name="certificate-authorized-when-using-node's-https-create-server"></a><details>
-  <summary>(Click to expand) When using node's `https.createServer`
-</summary>
-  <br>
+<a id="certificate-authorized-when-using-node's-https-create-server"></a><details><summary>(Click to expand) When using node's `https.createServer`
+</summary><br>
 
 ```js
 function certificateAuthorized(ctx) {
@@ -1151,7 +1188,7 @@ function certificateAuthorized(ctx) {
 
 #### certificateBoundAccessTokens
 
-Enables section 3 & 4 Mutual TLS Client Certificate-Bound Tokens  
+Enables section 3 & 4 Mutual TLS Client Certificate-Bound Tokens by exposing the client's `tls_client_certificate_bound_access_tokens` metadata property.  
 
 
 _**default value**_:
@@ -1164,9 +1201,7 @@ false
 Function used to determine if the client certificate, used in the request, subject matches the registered client property. Only used for `tls_client_auth` client authentication method.   
   
 
-<a name="certificate-subject-matches-when-behind-a-tls-terminating-proxy-nginx-apache"></a><details>
-  <summary>(Click to expand) When behind a TLS terminating proxy (nginx/apache)</summary>
-  <br>
+<a id="certificate-subject-matches-when-behind-a-tls-terminating-proxy-nginx-apache"></a><details><summary>(Click to expand) When behind a TLS terminating proxy (nginx/apache)</summary><br>
 
 
 TLS terminating proxies can pass a header with the Subject DN pretty easily, for Nginx this would be `$ssl_client_s_dn`, for apache `%{SSL_CLIENT_S_DN}s`.
@@ -1189,9 +1224,7 @@ function certificateSubjectMatches(ctx, property, expected) {
 Function used to retrieve the PEM-formatted client certificate used in the request.   
   
 
-<a name="get-certificate-when-behind-a-tls-terminating-proxy-nginx-apache"></a><details>
-  <summary>(Click to expand) When behind a TLS terminating proxy (nginx/apache)</summary>
-  <br>
+<a id="get-certificate-when-behind-a-tls-terminating-proxy-nginx-apache"></a><details><summary>(Click to expand) When behind a TLS terminating proxy (nginx/apache)</summary><br>
 
 
 When behind a TLS terminating proxy it is common that the certificate be passed to the application as a sanitized header. This returns the chosen header value provided by nginx's `$ssl_client_cert` or apache's `%{SSL_CLIENT_CERT}s`
@@ -1203,10 +1236,8 @@ function getCertificate(ctx) {
 }
 ```
 </details>
-<a name="get-certificate-when-using-node's-https-create-server"></a><details>
-  <summary>(Click to expand) When using node's `https.createServer`
-</summary>
-  <br>
+<a id="get-certificate-when-using-node's-https-create-server"></a><details><summary>(Click to expand) When using node's `https.createServer`
+</summary><br>
 
 ```js
 function getCertificate(ctx) {
@@ -1220,7 +1251,7 @@ function getCertificate(ctx) {
 
 #### selfSignedTlsClientAuth
 
-Enables section 2.2. Self-Signed Certificate Mutual TLS client authentication Method  
+Enables section 2.2. Self-Signed Certificate Mutual TLS client authentication method `self_signed_tls_client_auth` for use in the server's `tokenEndpointAuthMethods`, `introspectionEndpointAuthMethods`, and `revocationEndpointAuthMethods` configuration options.  
 
 
 _**default value**_:
@@ -1230,7 +1261,7 @@ false
 
 #### tlsClientAuth
 
-Enables section 2.1. PKI Mutual TLS client authentication method  
+Enables section 2.1. PKI Mutual TLS client authentication method `tls_client_auth` for use in the server's `tokenEndpointAuthMethods`, `introspectionEndpointAuthMethods`, and `revocationEndpointAuthMethods` configuration options.  
 
 
 _**default value**_:
@@ -1242,9 +1273,9 @@ false
 
 ### features.pushedAuthorizationRequests
 
-[draft-lodderstedt-oauth-par-00](https://tools.ietf.org/html/draft-lodderstedt-oauth-par-00) - OAuth 2.0 Pushed Authorization Requests  
+[draft-ietf-oauth-par-01](https://tools.ietf.org/html/draft-ietf-oauth-par-01) - OAuth 2.0 Pushed Authorization Requests  
 
-Enables the use `pushed_authorization_request_endpoint` defined by the Pushed Authorization Requests draft.   
+Enables the use of `pushed_authorization_request_endpoint` defined by the Pushed Authorization Requests draft.   
   
 
 
@@ -1269,12 +1300,11 @@ _**default value**_:
   idFactory: [Function: idFactory], // see expanded details below
   initialAccessToken: false,
   policies: undefined,
-  secretFactory: [Function: secretFactory]
+  secretFactory: [Function: secretFactory] // see expanded details below
 }
 ```
-<details>
-  <summary>(Click to expand) features.registration options details</summary>
-  <br>
+
+<details><summary>(Click to expand) features.registration options details</summary><br>
 
 
 #### idFactory
@@ -1284,7 +1314,7 @@ Function used to generate random client identifiers during dynamic client regist
 
 _**default value**_:
 ```js
-idFactory() {
+function idFactory(ctx) {
   return nanoid();
 }
 ```
@@ -1301,10 +1331,8 @@ _**default value**_:
 ```js
 false
 ```
-<a name="initial-access-token-to-add-an-adapter-backed-initial-access-token-and-retrive-its-value"></a><details>
-  <summary>(Click to expand) To add an adapter backed initial access token and retrive its value
-</summary>
-  <br>
+<a id="initial-access-token-to-add-an-adapter-backed-initial-access-token-and-retrive-its-value"></a><details><summary>(Click to expand) To add an adapter backed initial access token and retrive its value
+</summary><br>
 
 ```js
 new (provider.InitialAccessToken)({}).save().then(console.log);
@@ -1321,9 +1349,7 @@ _**default value**_:
 ```js
 undefined
 ```
-<a name="policies-to-define-registration-and-registration-management-policies"></a><details>
-  <summary>(Click to expand) To define registration and registration management policies</summary>
-  <br>
+<a id="policies-to-define-registration-and-registration-management-policies"></a><details><summary>(Click to expand) To define registration and registration management policies</summary><br>
 
 
 To define policy functions configure `features.registration` to be an object like so:
@@ -1366,16 +1392,14 @@ Note: referenced policies must always be present when encountered on a token, an
 ctx.oidc.entities.RegistrationAccessToken.policies = ['update-policy'];
 ```
 </details>
-<a name="policies-using-initial-access-token-policies-for-software-statement-dynamic-client-registration-property"></a><details>
-  <summary>(Click to expand) Using Initial Access Token policies for software_statement dynamic client registration property</summary>
-  <br>
+<a id="policies-using-initial-access-token-policies-for-software-statement-dynamic-client-registration-property"></a><details><summary>(Click to expand) Using Initial Access Token policies for software_statement dynamic client registration property</summary><br>
 
 
 Support modules:
   
 
 ```js
-const { verify } = require('jsonwebtoken');
+const { JWT: { verify }, JWK } = require('jose');
 const {
   errors: { InvalidSoftwareStatement, UnapprovedSoftwareStatement, InvalidClientMetadata },
 } = require('oidc-provider');
@@ -1392,14 +1416,15 @@ features.registration configuration:
      if (!('software_statement' in metadata)) {
        throw new InvalidClientMetadata('software_statement must be provided');
      }
-     const softwareStatementKey = await loadKeyForThisPolicy();
+     const softwareStatementKey = JWK.asKey(await loadKeyForThisPolicy());
      const statement = metadata.software_statement;
      let payload;
      try {
        payload = verify(value, softwareStatementKey, {
-         algorithms: ['RS256'],
+         algorithms: ['PS256'],
          issuer: 'Software Statement Issuer',
        });
+       // additional custom validation function
        if (!approvedStatement(value, payload)) {
          throw new UnapprovedSoftwareStatement('software_statement not approved for use');
        }
@@ -1429,7 +1454,7 @@ Function used to generate random client secrets during dynamic client registrati
 
 _**default value**_:
 ```js
-secretFactory() {
+function secretFactory(ctx) {
   return base64url.encodeBuffer(crypto.randomBytes(64)); // 512 base64url random bits
 }
 ```
@@ -1450,9 +1475,8 @@ _**default value**_:
   rotateRegistrationAccessToken: false
 }
 ```
-<details>
-  <summary>(Click to expand) features.registrationManagement options details</summary>
-  <br>
+
+<details><summary>(Click to expand) features.registrationManagement options details</summary><br>
 
 
 #### rotateRegistrationAccessToken
@@ -1467,10 +1491,8 @@ _**default value**_:
 ```js
 false
 ```
-<a name="rotate-registration-access-token-function-use"></a><details>
-  <summary>(Click to expand) function use
-</summary>
-  <br>
+<a id="rotate-registration-access-token-function-use"></a><details><summary>(Click to expand) function use
+</summary><br>
 
 ```js
 {
@@ -1513,9 +1535,8 @@ _**default value**_:
   requireUriRegistration: true
 }
 ```
-<details>
-  <summary>(Click to expand) features.requestObjects options details</summary>
-  <br>
+
+<details><summary>(Click to expand) features.requestObjects options details</summary><br>
 
 
 #### mergingStrategy.name
@@ -1582,7 +1603,7 @@ true
 
 ### features.resourceIndicators
 
-[draft-ietf-oauth-resource-indicators-07](https://tools.ietf.org/html/draft-ietf-oauth-resource-indicators-07) - Resource Indicators for OAuth 2.0  
+[draft-ietf-oauth-resource-indicators-08](https://tools.ietf.org/html/draft-ietf-oauth-resource-indicators-08) - Resource Indicators for OAuth 2.0  
 
 Enables the use of `resource` parameter for the authorization and token endpoints. In order for the feature to be any useful you must also use the `audiences` function to validate the resource(s) and transform it to the Access Token audience.   
   
@@ -1595,9 +1616,7 @@ _**default value**_:
   enabled: false
 }
 ```
-<a name="features-resource-indicators-example-use"></a><details>
-  <summary>(Click to expand) Example use</summary>
-  <br>
+<a id="features-resource-indicators-example-use"></a><details><summary>(Click to expand) Example use</summary><br>
 
 
 This example
@@ -1644,9 +1663,8 @@ This example
 }
 ```
 </details>
-<details>
-  <summary>(Click to expand) features.resourceIndicators options details</summary>
-  <br>
+
+<details><summary>(Click to expand) features.resourceIndicators options details</summary><br>
 
 
 #### allowedPolicy
@@ -1659,7 +1677,7 @@ _**recommendation**_: Only allow pre-registered resource values, to pre-register
 
 _**default value**_:
 ```js
-async allowedPolicy(ctx, resources, client) {
+async function allowedPolicy(ctx, resources, client) {
   return true;
 }
 ```
@@ -1681,23 +1699,38 @@ _**default value**_:
 }
 ```
 
+### features.secp256k1
+
+[html/draft-ietf-cose-webauthn-algorithms-05](https://tools.ietf.org/html/html/draft-ietf-cose-webauthn-algorithms-05) - Support for secp256k1 EC curve  
+
+Enables the use of ES256K algorithm in `whitelistedJWA` configuration as well as having an EC JWK with secp256k1 curve in the provider keystore.  
+
+
+_**default value**_:
+```js
+{
+  enabled: false
+}
+```
+
 ### features.sessionManagement
 
 [Session Management 1.0 - draft 28](https://openid.net/specs/openid-connect-session-1_0-28.html)  
 
-Enables Session Management features.  
+Enables Session Management features.   
+ Note: Browsers blocking access to cookies from a third party context hinder the reliability of this standard.  
 
 
 _**default value**_:
 ```js
 {
   enabled: false,
-  keepHeaders: false
+  keepHeaders: false,
+  scriptNonce: [Function: scriptNonce] // see expanded details below
 }
 ```
-<details>
-  <summary>(Click to expand) features.sessionManagement options details</summary>
-  <br>
+
+<details><summary>(Click to expand) features.sessionManagement options details</summary><br>
 
 
 #### keepHeaders
@@ -1710,6 +1743,18 @@ _**recommendation**_: Only enable this if you know what you're doing either in a
 _**default value**_:
 ```js
 false
+```
+
+#### scriptNonce
+
+When using `nonce-{random}` CSP policy use this helper function to resolve a nonce to add to the &lt;script&gt; tags in the `check_session_iframe` html source.  
+
+
+_**default value**_:
+```js
+function scriptNonce(ctx) {
+  return undefined;
+}
 ```
 
 </details>
@@ -1733,14 +1778,44 @@ _**default value**_:
 [draft-sakimura-oauth-wmrm-00](https://tools.ietf.org/html/draft-sakimura-oauth-wmrm-00) - OAuth 2.0 Web Message Response Mode  
 
 Enables `web_message` response mode.   
+ Note: Browsers blocking access to cookies from a third party context hinder the reliability of `response_mode=web_message` "no prompt" mode.   
  Note: Although a general advise to use a `helmet` ([express](https://www.npmjs.com/package/helmet), [koa](https://www.npmjs.com/package/koa-helmet)) it is especially advised for your interaction views routes if Web Message Response Mode is available on your deployment.  
 
 
 _**default value**_:
 ```js
 {
-  enabled: false
+  enabled: false,
+  scriptNonce: [Function: scriptNonce] // see expanded details below
 }
+```
+
+<details><summary>(Click to expand) features.webMessageResponseMode options details</summary><br>
+
+
+#### scriptNonce
+
+When using `nonce-{random}` CSP policy use this helper function to resolve a nonce to add to the &lt;script&gt; tag in the rendered web_message response mode html source  
+
+
+_**default value**_:
+```js
+function scriptNonce(ctx) {
+  return undefined;
+}
+```
+
+</details>
+
+### acceptQueryParamAccessTokens
+
+Several OAuth 2.0 / OIDC profiles prohibit the use of query strings to carry access tokens. This setting either allows (true) or prohibits (false) that mechanism to be used.   
+  
+
+
+_**default value**_:
+```js
+true
 ```
 
 ### acrValues
@@ -1764,7 +1839,7 @@ Function used to set an audience to issued Access Tokens. The return value shoul
 
 _**default value**_:
 ```js
-async audiences(ctx, sub, token, use) {
+async function audiences(ctx, sub, token, use) {
   // @param ctx   - koa request context
   // @param sub   - account identifier (subject)
   // @param token - the token to which these additional audiences will be passed to
@@ -1799,7 +1874,7 @@ Function used to check whether a given CORS request should be allowed based on t
 
 _**default value**_:
 ```js
-clientBasedCORS(ctx, origin, client) {
+function clientBasedCORS(ctx, origin, client) {
   return true;
 }
 ```
@@ -1823,9 +1898,7 @@ _**default value**_:
   token_endpoint_auth_method: 'client_secret_basic'
 }
 ```
-<a name="client-defaults-changing-the-default-client-token-endpoint-auth-method"></a><details>
-  <summary>(Click to expand) Changing the default client token_endpoint_auth_method</summary>
-  <br>
+<a id="client-defaults-changing-the-default-client-token-endpoint-auth-method"></a><details><summary>(Click to expand) Changing the default client token_endpoint_auth_method</summary><br>
 
 
 To change the default client token_endpoint_auth_method configure `clientDefaults` to be an object like so:
@@ -1837,9 +1910,7 @@ To change the default client token_endpoint_auth_method configure `clientDefault
 }
 ```
 </details>
-<a name="client-defaults-changing-the-default-client-response-type-to-code-id-token"></a><details>
-  <summary>(Click to expand) Changing the default client response type to `code id_token`</summary>
-  <br>
+<a id="client-defaults-changing-the-default-client-response-type-to-code-id-token"></a><details><summary>(Click to expand) Changing the default client response type to `code id_token`</summary><br>
 
 
 To change the default client response_types configure `clientDefaults` to be an object like so:
@@ -1885,7 +1956,7 @@ Options for the [cookie module](https://github.com/pillarjs/cookies#cookiesset-n
 
 ### cookies.keys
 
-[Keygrip][keygrip-module] Signing keys used for cookie signing to prevent tampering.  
+[Keygrip](https://www.npmjs.com/package/keygrip) Signing keys used for cookie signing to prevent tampering.  
 
 _**recommendation**_: Rotate regularly (by prepending new keys) with a reasonable interval and keep a reasonable history of keys to allow for returning user session cookies to still be valid and re-signed  
 
@@ -1974,9 +2045,7 @@ _**default value**_:
 ```js
 []
 ```
-<a name="dynamic-scopes-to-enable-a-dynamic-scope-values-like-api-write-hex-id-and-api-read-hex-id"></a><details>
-  <summary>(Click to expand) To enable a dynamic scope values like `api:write:{hex id}` and `api:read:{hex id}`</summary>
-  <br>
+<a id="dynamic-scopes-to-enable-a-dynamic-scope-values-like-api-write-hex-id-and-api-read-hex-id"></a><details><summary>(Click to expand) To enable a dynamic scope values like `api:write:{hex id}` and `api:read:{hex id}`</summary><br>
 
 
 Configure `dynamicScopes` like so:
@@ -1997,7 +2066,7 @@ Function used to decide whether the given authorization code/ device code or imp
 
 _**default value**_:
 ```js
-async expiresWithSession(ctx, token) {
+async function expiresWithSession(ctx, token) {
   return !token.scopes.has('offline_access');
 }
 ```
@@ -2010,14 +2079,12 @@ Function used to get additional access token claims when it is being issued. The
 
 _**default value**_:
 ```js
-async extraAccessTokenClaims(ctx, token) {
+async function extraAccessTokenClaims(ctx, token) {
   return undefined;
 }
 ```
-<a name="extra-access-token-claims-to-push-additional-claims-to-an-access-token"></a><details>
-  <summary>(Click to expand) To push additional claims to an Access Token
-</summary>
-  <br>
+<a id="extra-access-token-claims-to-push-additional-claims-to-an-access-token"></a><details><summary>(Click to expand) To push additional claims to an Access Token
+</summary><br>
 
 ```js
 {
@@ -2032,12 +2099,12 @@ async extraAccessTokenClaims(ctx, token) {
 
 ### extraClientMetadata
 
-Allows for custom client metadata to be defined, validated, manipulated as well as for existing property validations to be extended  
+Allows for custom client metadata to be defined, validated, manipulated as well as for existing property validations to be extended. Existing properties are snakeCased on a Client instance (e.g. `client.redirectUris`), new properties (defined by this configuration) will be avaialable with their names verbatim (e.g. `client['urn:example:client:my-property']`)  
 
 
 ### extraClientMetadata.properties
 
-Array of property names that clients will be allowed to have defined. Property names will have to strictly follow the ones defined here. However, on a Client instance property names will be snakeCased.  
+Array of property names that clients will be allowed to have defined.  
 
 
 _**default value**_:
@@ -2053,7 +2120,7 @@ validator function that will be executed in order once for every property define
 
 _**default value**_:
 ```js
-validator(key, value, metadata, ctx) {
+function validator(key, value, metadata, ctx) {
   // @param key - the client metadata property name
   // @param value - the property value
   // @param metadata - the current accumulated client metadata
@@ -2065,17 +2132,15 @@ validator(key, value, metadata, ctx) {
   // return not necessary, metadata is already a reference
 }
 ```
-<a name="extra-client-metadata-validator-using-extra-client-metadata-to-allow-software-statement-dynamic-client-registration-property"></a><details>
-  <summary>(Click to expand) Using extraClientMetadata to allow software_statement dynamic client registration property
-</summary>
-  <br>
+<a id="extra-client-metadata-validator-using-extra-client-metadata-to-allow-software-statement-dynamic-client-registration-property"></a><details><summary>(Click to expand) Using extraClientMetadata to allow software_statement dynamic client registration property
+</summary><br>
 
 ```js
-const { verify } = require('jsonwebtoken');
+const { JWT: { verify }, JWK } = require('jose');
 const {
   errors: { InvalidSoftwareStatement, UnapprovedSoftwareStatement },
 } = require('oidc-provider');
-const softwareStatementKey = require('path/to/public/key');
+const softwareStatementKey = JWK.asKey(require('path/to/public/key'))
 {
   extraClientMetadata: {
     properties: ['software_statement'],
@@ -2088,9 +2153,10 @@ const softwareStatementKey = require('path/to/public/key');
         try {
           // extraClientMetadata.validator must be sync :sadface:
           payload = verify(value, softwareStatementKey, {
-            algorithms: ['RS256'],
+            algorithms: ['PS256'],
             issuer: 'Software Statement Issuer',
           });
+          // additional custom validation function
           if (!approvedStatement(value, payload)) {
             throw new UnapprovedSoftwareStatement('software_statement not approved for use');
           }
@@ -2124,7 +2190,7 @@ _**default value**_:
 This option allows to configure the token serialization format. The different values change how a client-facing token value is generated as well as what properties get sent to the adapter for storage.
  - `opaque` (default) formatted tokens store every property as a root property in your adapter
  - `jwt` formatted tokens are issued as JWTs and stored the same as `opaque` only with additional property `jwt`. See `formats.jwtAccessTokenSigningAlg` for resolving the JWT Access Token signing algorithm. Note this is a proprietary format that will eventually get deprecated in favour of the 'jwt-ietf' value (once it gets stable and close to being an RFC)
- - `jwt-ietf` formatted tokens are issued as JWTs and stored the same as `opaque` only with additional property `jwt-ietf`. See `formats.jwtAccessTokenSigningAlg` for resolving the JWT Access Token signing algorithm. This is an implementation of [JSON Web Token (JWT) Profile for OAuth 2.0 Access Tokens](https://tools.ietf.org/html/draft-ietf-oauth-access-token-jwt-02) draft and to enable it you need to enable `features.ietfJWTAccessTokenProfile`. 'jwt-ietf' value (once it gets stable and close to being an RFC)
+ - `jwt-ietf` formatted tokens are issued as JWTs and stored the same as `opaque` only with additional property `jwt-ietf`. See `formats.jwtAccessTokenSigningAlg` for resolving the JWT Access Token signing algorithm. This is an implementation of [JSON Web Token (JWT) Profile for OAuth 2.0 Access Tokens](https://tools.ietf.org/html/draft-ietf-oauth-access-token-jwt-05) draft and to enable it you need to enable `features.ietfJWTAccessTokenProfile`. 'jwt-ietf' value (once it gets stable and close to being an RFC)
  - `paseto` formatted tokens are issued as v2.public PASETOs and stored the same as `opaque` only with additional property `paseto`. The server must have an `OKP Ed25519` key available to sign with else it will throw a server error. PASETOs are also allowed to only have a single audience, if the token's "aud" resolves with more than one the server will throw a server error. **This format is only supported in node runtime >= 12.0.0**
  - the value may also be a function dynamically determining the format (returning either `jwt`, `jwt-ietf`, `paseto` or `opaque` depending on the token itself)   
   
@@ -2140,12 +2206,10 @@ _**default value**_:
     jwt: undefined,
     paseto: undefined
   },
-  jwtAccessTokenSigningAlg: [AsyncFunction: jwtAccessTokenSigningAlg]
+  jwtAccessTokenSigningAlg: [AsyncFunction: jwtAccessTokenSigningAlg] // see expanded details below
 }
 ```
-<a name="formats-to-enable-jwt-access-tokens"></a><details>
-  <summary>(Click to expand) To enable JWT Access Tokens</summary>
-  <br>
+<a id="formats-to-enable-jwt-access-tokens"></a><details><summary>(Click to expand) To enable JWT Access Tokens</summary><br>
 
 
 Configure `formats`:
@@ -2155,9 +2219,7 @@ Configure `formats`:
 { AccessToken: 'jwt' }
 ```
 </details>
-<a name="formats-to-enable-paseto-v-2-public-access-tokens"></a><details>
-  <summary>(Click to expand) To enable PASETO v2.public Access Tokens</summary>
-  <br>
+<a id="formats-to-enable-paseto-v-2-public-access-tokens"></a><details><summary>(Click to expand) To enable PASETO v2.public Access Tokens</summary><br>
 
 
 Configure `formats`:
@@ -2167,9 +2229,7 @@ Configure `formats`:
 { AccessToken: 'paseto' }
 ```
 </details>
-<a name="formats-to-dynamically-decide-on-the-format-used-e-g-only-if-it-is-intended-for-a-resource"></a><details>
-  <summary>(Click to expand) To dynamically decide on the format used, e.g. only if it is intended for a resource</summary>
-  <br>
+<a id="formats-to-dynamically-decide-on-the-format-used-e-g-only-if-it-is-intended-for-a-resource"></a><details><summary>(Click to expand) To dynamically decide on the format used, e.g. only if it is intended for a resource</summary><br>
 
 
 server Configure `formats`:
@@ -2198,70 +2258,60 @@ _**default value**_:
   paseto: undefined
 }
 ```
-<a name="formats-customizers-to-push-additional-claims-to-a-jwt-format-access-token-payload"></a><details>
-  <summary>(Click to expand) To push additional claims to a `jwt` format Access Token payload
-</summary>
-  <br>
+<a id="formats-customizers-to-push-additional-claims-to-a-jwt-format-access-token-payload"></a><details><summary>(Click to expand) To push additional claims to a `jwt` format Access Token payload
+</summary><br>
 
 ```js
 {
   customizers: {
-    jwt(ctx, token, jwt) {
+    async jwt(ctx, token, jwt) {
       jwt.payload.foo = 'bar';
     }
   }
 }
 ```
 </details>
-<a name="formats-customizers-to-push-additional-headers-to-a-jwt-format-access-token"></a><details>
-  <summary>(Click to expand) To push additional headers to a `jwt` format Access Token
-</summary>
-  <br>
+<a id="formats-customizers-to-push-additional-headers-to-a-jwt-format-access-token"></a><details><summary>(Click to expand) To push additional headers to a `jwt` format Access Token
+</summary><br>
 
 ```js
 {
   customizers: {
-    jwt(ctx, token, jwt) {
+    async jwt(ctx, token, jwt) {
       jwt.header = { foo: 'bar' };
     }
   }
 }
 ```
 </details>
-<a name="formats-customizers-to-push-additional-claims-to-a-jwt-ietf-format-access-token-payload"></a><details>
-  <summary>(Click to expand) To push additional claims to a `jwt-ietf` format Access Token payload
-</summary>
-  <br>
+<a id="formats-customizers-to-push-additional-claims-to-a-jwt-ietf-format-access-token-payload"></a><details><summary>(Click to expand) To push additional claims to a `jwt-ietf` format Access Token payload
+</summary><br>
 
 ```js
 {
   customizers: {
-    ['jwt-ietf'](ctx, token, jwt) {
+    async ['jwt-ietf'](ctx, token, jwt) {
       jwt.payload.foo = 'bar';
     }
   }
 }
 ```
 </details>
-<a name="formats-customizers-to-push-additional-headers-to-a-jwt-ietf-format-access-token"></a><details>
-  <summary>(Click to expand) To push additional headers to a `jwt-ietf` format Access Token
-</summary>
-  <br>
+<a id="formats-customizers-to-push-additional-headers-to-a-jwt-ietf-format-access-token"></a><details><summary>(Click to expand) To push additional headers to a `jwt-ietf` format Access Token
+</summary><br>
 
 ```js
 {
   customizers: {
-    ['jwt-ietf'](ctx, token, jwt) {
+    async ['jwt-ietf'](ctx, token, jwt) {
       jwt.header = { foo: 'bar' };
     }
   }
 }
 ```
 </details>
-<a name="formats-customizers-to-push-a-payload-and-a-footer-to-a-paseto-structured-access-token"></a><details>
-  <summary>(Click to expand) To push a payload and a footer to a PASETO structured access token
-</summary>
-  <br>
+<a id="formats-customizers-to-push-a-payload-and-a-footer-to-a-paseto-structured-access-token"></a><details><summary>(Click to expand) To push a payload and a footer to a PASETO structured access token
+</summary><br>
 
 ```js
 {
@@ -2284,7 +2334,7 @@ Function used to resolve a JWT Access Token signing algorithm. The resolved algo
 
 _**default value**_:
 ```js
-async jwtAccessTokenSigningAlg(ctx, token, client) {
+async function jwtAccessTokenSigningAlg(ctx, token, client) {
   if (client && client.idTokenSignedResponseAlg !== 'none' && !client.idTokenSignedResponseAlg.startsWith('HS')) {
     return client.idTokenSignedResponseAlg;
   }
@@ -2300,7 +2350,7 @@ Function called whenever calls to an external HTTP(S) resource are being made. U
 
 _**default value**_:
 ```js
-httpOptions(options) {
+function httpOptions(options) {
   options.followRedirect = false;
   options.headers['User-Agent'] = 'oidc-provider/${VERSION} (${ISSUER_IDENTIFIER})';
   options.retry = 0;
@@ -2309,9 +2359,7 @@ httpOptions(options) {
   return options;
 }
 ```
-<a name="http-options-to-change-the-request's-timeout"></a><details>
-  <summary>(Click to expand) To change the request's timeout</summary>
-  <br>
+<a id="http-options-to-change-the-request's-timeout"></a><details><summary>(Click to expand) To change the request's timeout</summary><br>
 
 
 To change all request's timeout configure the httpOptions as a function like so:
@@ -2623,9 +2671,7 @@ _**default value**_:
 ]
 
 ```
-<a name="interactions-policy-default-interaction-policy-description"></a><details>
-  <summary>(Click to expand) default interaction policy description</summary>
-  <br>
+<a id="interactions-policy-default-interaction-policy-description"></a><details><summary>(Click to expand) default interaction policy description</summary><br>
 
 
 The default interaction policy consists of two available prompts, login and consent <br/><br/>
@@ -2644,9 +2690,7 @@ The default interaction policy consists of two available prompts, login and cons
 
 
 </details>
-<a name="interactions-policy-disabling-default-checks"></a><details>
-  <summary>(Click to expand) disabling default checks</summary>
-  <br>
+<a id="interactions-policy-disabling-default-checks"></a><details><summary>(Click to expand) disabling default checks</summary><br>
 
 
 You may be required to skip (silently accept) some of the consent checks, while it is discouraged there are valid reasons to do that, for instance in some first-party scenarios or going with pre-existing, previously granted, consents. Definitely do not just remove the checks, remove and add ones that do the same operation with the exception of those scenarios you want to skip and in those you'll have to call some of the methods ran by the `returnTo` / `resume` flow by default to ensure smooth operation.
@@ -2658,10 +2702,8 @@ You may be required to skip (silently accept) some of the consent checks, while 
 
 
 </details>
-<a name="interactions-policy-modifying-the-default-interaction-policy"></a><details>
-  <summary>(Click to expand) modifying the default interaction policy
-</summary>
-  <br>
+<a id="interactions-policy-modifying-the-default-interaction-policy"></a><details><summary>(Click to expand) modifying the default interaction policy
+</summary><br>
 
 ```js
 const { interactionPolicy: { Prompt, Check, base } } = require('oidc-provider');
@@ -2682,7 +2724,7 @@ Function used to determine where to redirect User-Agent for necessary interactio
 
 _**default value**_:
 ```js
-async url(ctx, interaction) {
+async function url(ctx, interaction) {
   return `/interaction/${ctx.oidc.uid}`;
 }
 ```
@@ -2711,13 +2753,11 @@ Function used to decide whether a refresh token will be issued or not
 
 _**default value**_:
 ```js
-async issueRefreshToken(ctx, client, code) {
+async function issueRefreshToken(ctx, client, code) {
   return client.grantTypeAllowed('refresh_token') && code.scopes.has('offline_access');
 }
 ```
-<a name="issue-refresh-token-to-always-issue-a-refresh-tokens"></a><details>
-  <summary>(Click to expand) To always issue a refresh tokens ...</summary>
-  <br>
+<a id="issue-refresh-token-to-always-issue-a-refresh-tokens"></a><details><summary>(Click to expand) To always issue a refresh tokens ...</summary><br>
 
 
 ... If a client has the grant whitelisted and scope includes offline_access or the client is a public web client doing code flow. Configure `issueRefreshToken` like so
@@ -2740,24 +2780,24 @@ HTML source rendered when session management feature renders a confirmation prom
 
 _**default value**_:
 ```js
-async logoutSource(ctx, form) {
+async function logoutSource(ctx, form) {
   // @param ctx - koa request context
   // @param form - form source (id="op.logoutForm") to be embedded in the page and submitted by
   //   the End-User
   ctx.body = `<!DOCTYPE html>
-<head>
-<title>Logout Request</title>
-<style>/* css and html classes omitted for brevity, see lib/helpers/defaults.js */</style>
-</head>
-<body>
-<div>
-  <h1>Do you want to sign-out from ${ctx.host}?</h1>
-  ${form}
-  <button autofocus type="submit" form="op.logoutForm" value="yes" name="logout">Yes, sign me out</button>
-  <button type="submit" form="op.logoutForm">No, stay signed in</button>
-</div>
-</body>
-</html>`;
+    <head>
+      <title>Logout Request</title>
+      <style>/* css and html classes omitted for brevity, see lib/helpers/defaults.js */</style>
+    </head>
+    <body>
+      <div>
+        <h1>Do you want to sign-out from ${ctx.host}?</h1>
+        ${form}
+        <button autofocus type="submit" form="op.logoutForm" value="yes" name="logout">Yes, sign me out</button>
+        <button type="submit" form="op.logoutForm">No, stay signed in</button>
+      </div>
+    </body>
+    </html>`;
 }
 ```
 
@@ -2770,7 +2810,7 @@ _**recommendation**_: Since this might be called several times in one request wi
 
 _**default value**_:
 ```js
-async pairwiseIdentifier(ctx, accountId, client) {
+async function pairwiseIdentifier(ctx, accountId, client) {
   return crypto.createHash('sha256')
     .update(client.sectorIdentifier)
     .update(accountId)
@@ -2800,24 +2840,24 @@ HTML source rendered when session management feature concludes a logout but ther
 
 _**default value**_:
 ```js
-async postLogoutSuccessSource(ctx) {
+async function postLogoutSuccessSource(ctx) {
   // @param ctx - koa request context
   const {
     clientId, clientName, clientUri, initiateLoginUri, logoUri, policyUri, tosUri,
   } = ctx.oidc.client || {}; // client is defined if the user chose to stay logged in with the OP
   const display = clientName || clientId;
   ctx.body = `<!DOCTYPE html>
-<head>
-<title>Sign-out Success</title>
-<style>/* css and html classes omitted for brevity, see lib/helpers/defaults.js */</style>
-</head>
-<body>
-<div>
-  <h1>Sign-out Success</h1>
-  <p>Your sign-out ${display ? `with ${display}` : ''} was successful.</p>
-</div>
-</body>
-</html>`;
+    <head>
+      <title>Sign-out Success</title>
+      <style>/* css and html classes omitted for brevity, see lib/helpers/defaults.js */</style>
+    </head>
+    <body>
+      <div>
+        <h1>Sign-out Success</h1>
+        <p>Your sign-out ${display ? `with ${display}` : ''} was successful.</p>
+      </div>
+    </body>
+    </html>`;
 }
 ```
 
@@ -2828,20 +2868,20 @@ Function used to present errors to the User-Agent
 
 _**default value**_:
 ```js
-async renderError(ctx, out, error) {
+async function renderError(ctx, out, error) {
   ctx.type = 'html';
   ctx.body = `<!DOCTYPE html>
-<head>
-<title>oops! something went wrong</title>
-<style>/* css and html classes omitted for brevity, see lib/helpers/defaults.js */</style>
-</head>
-<body>
-<div>
-  <h1>oops! something went wrong</h1>
-  ${Object.entries(out).map(([key, value]) => `<pre><strong>${key}</strong>: ${htmlSafe(value)}</pre>`).join('')}
-</div>
-</body>
-</html>`;
+    <head>
+      <title>oops! something went wrong</title>
+      <style>/* css and html classes omitted for brevity, see lib/helpers/defaults.js */</style>
+    </head>
+    <body>
+      <div>
+        <h1>oops! something went wrong</h1>
+        ${Object.entries(out).map(([key, value]) => `<pre><strong>${key}</strong>: ${htmlSafe(value)}</pre>`).join('')}
+      </div>
+    </body>
+    </html>`;
 }
 ```
 
@@ -2860,9 +2900,7 @@ _**default value**_:
   'none'
 ]
 ```
-<a name="response-types-supported-values-list"></a><details>
-  <summary>(Click to expand) Supported values list</summary>
-  <br>
+<a id="response-types-supported-values-list"></a><details><summary>(Click to expand) Supported values list</summary><br>
 
 
 These are values defined in [Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html#Authentication) and [OAuth 2.0 Multiple Response Type Encoding Practices](https://openid.net/specs/oauth-v2-multiple-response-types-1_0.html)
@@ -2909,7 +2947,7 @@ Configures if and how the OP rotates refresh tokens after they are used. Support
 
 _**default value**_:
 ```js
-rotateRefreshToken(ctx) {
+function rotateRefreshToken(ctx) {
   const { RefreshToken: refreshToken, Client: client } = ctx.oidc.entities;
   // cap the maximum amount of time a refresh token can be
   // rotated for up to 1 year, afterwards its TTL is final
@@ -2990,10 +3028,8 @@ _**default value**_:
   'private_key_jwt'
 ]
 ```
-<a name="token-endpoint-auth-methods-supported-values-list"></a><details>
-  <summary>(Click to expand) Supported values list
-</summary>
-  <br>
+<a id="token-endpoint-auth-methods-supported-values-list"></a><details><summary>(Click to expand) Supported values list
+</summary><br>
 
 ```js
 [
@@ -3021,7 +3057,7 @@ _**default value**_:
   ClientCredentials: 600,
   DeviceCode: 600,
   IdToken: 3600,
-  RefreshToken: function (ctx, token, client) {
+  RefreshToken: function RefreshToken(ctx, token, client) {
     if (
       ctx && ctx.oidc.entities.RotatedRefreshToken
       && client.applicationType === 'web'
@@ -3036,9 +3072,7 @@ _**default value**_:
   }
 }
 ```
-<a name="ttl-to-resolve-a-ttl-on-runtime-for-each-new-token"></a><details>
-  <summary>(Click to expand) To resolve a ttl on runtime for each new token</summary>
-  <br>
+<a id="ttl-to-resolve-a-ttl-on-runtime-for-each-new-token"></a><details><summary>(Click to expand) To resolve a ttl on runtime for each new token</summary><br>
 
 
 Configure `ttl` for a given token type with a function like so, this must return a value, not a Promise.
@@ -3082,15 +3116,13 @@ _**default value**_:
   'RSA-OAEP'
 ]
 ```
-<a name="whitelisted-jwa-authorization-encryption-alg-values-supported-values-list"></a><details>
-  <summary>(Click to expand) Supported values list
-</summary>
-  <br>
+<a id="whitelisted-jwa-authorization-encryption-alg-values-supported-values-list"></a><details><summary>(Click to expand) Supported values list
+</summary><br>
 
 ```js
 [
-  // asymmetric RSAES based (note: RSA-OAEP-256 is only supported in node runtime >= 12.9.0)
-  'RSA-OAEP', 'RSA-OAEP-256', 'RSA1_5',
+  // asymmetric RSAES based (note: RSA-OAEP-* is only supported in node runtime >= 12.9.0)
+  'RSA-OAEP', 'RSA-OAEP-256', 'RSA-OAEP-384', 'RSA-OAEP-512', 'RSA1_5',
   // asymmetric ECDH-ES based
   'ECDH-ES', 'ECDH-ES+A128KW', 'ECDH-ES+A192KW', 'ECDH-ES+A256KW',
   // symmetric AES key wrapping
@@ -3118,10 +3150,8 @@ _**default value**_:
   'A256GCM'
 ]
 ```
-<a name="whitelisted-jwa-authorization-encryption-enc-values-supported-values-list"></a><details>
-  <summary>(Click to expand) Supported values list
-</summary>
-  <br>
+<a id="whitelisted-jwa-authorization-encryption-enc-values-supported-values-list"></a><details><summary>(Click to expand) Supported values list
+</summary><br>
 
 ```js
 [
@@ -3146,17 +3176,15 @@ _**default value**_:
   'EdDSA'
 ]
 ```
-<a name="whitelisted-jwa-authorization-signing-alg-values-supported-values-list"></a><details>
-  <summary>(Click to expand) Supported values list
-</summary>
-  <br>
+<a id="whitelisted-jwa-authorization-signing-alg-values-supported-values-list"></a><details><summary>(Click to expand) Supported values list
+</summary><br>
 
 ```js
 [
   'HS256', 'HS384', 'HS512',
   'RS256', 'RS384', 'RS512',
   'PS256', 'PS384', 'PS512',
-  'ES256', 'ES384', 'ES512',
+  'ES256', 'ES256K', 'ES384', 'ES512',
   'EdDSA', // (note: EdDSA is only supported in node runtime >= 12.0.0)
 ]
 ```
@@ -3177,16 +3205,14 @@ _**default value**_:
   'EdDSA'
 ]
 ```
-<a name="whitelisted-jwa-d-po-p-signing-alg-values-supported-values-list"></a><details>
-  <summary>(Click to expand) Supported values list
-</summary>
-  <br>
+<a id="whitelisted-jwa-d-po-p-signing-alg-values-supported-values-list"></a><details><summary>(Click to expand) Supported values list
+</summary><br>
 
 ```js
 [
   'RS256', 'RS384', 'RS512',
   'PS256', 'PS384', 'PS512',
-  'ES256', 'ES384', 'ES512',
+  'ES256', 'ES256K', 'ES384', 'ES512',
   'EdDSA', // (note: EdDSA is only supported in node runtime >= 12.0.0)
 ]
 ```
@@ -3209,15 +3235,13 @@ _**default value**_:
   'RSA-OAEP'
 ]
 ```
-<a name="whitelisted-jwa-id-token-encryption-alg-values-supported-values-list"></a><details>
-  <summary>(Click to expand) Supported values list
-</summary>
-  <br>
+<a id="whitelisted-jwa-id-token-encryption-alg-values-supported-values-list"></a><details><summary>(Click to expand) Supported values list
+</summary><br>
 
 ```js
 [
-  // asymmetric RSAES based (note: RSA-OAEP-256 is only supported in node runtime >= 12.9.0)
-  'RSA-OAEP', 'RSA-OAEP-256', 'RSA1_5',
+  // asymmetric RSAES based (note: RSA-OAEP-* is only supported in node runtime >= 12.9.0)
+  'RSA-OAEP', 'RSA-OAEP-256', 'RSA-OAEP-384', 'RSA-OAEP-512', 'RSA1_5',
   // asymmetric ECDH-ES based
   'ECDH-ES', 'ECDH-ES+A128KW', 'ECDH-ES+A192KW', 'ECDH-ES+A256KW',
   // symmetric AES key wrapping
@@ -3245,10 +3269,8 @@ _**default value**_:
   'A256GCM'
 ]
 ```
-<a name="whitelisted-jwa-id-token-encryption-enc-values-supported-values-list"></a><details>
-  <summary>(Click to expand) Supported values list
-</summary>
-  <br>
+<a id="whitelisted-jwa-id-token-encryption-enc-values-supported-values-list"></a><details><summary>(Click to expand) Supported values list
+</summary><br>
 
 ```js
 [
@@ -3273,10 +3295,8 @@ _**default value**_:
   'EdDSA'
 ]
 ```
-<a name="whitelisted-jwa-id-token-signing-alg-values-supported-values-list"></a><details>
-  <summary>(Click to expand) Supported values list
-</summary>
-  <br>
+<a id="whitelisted-jwa-id-token-signing-alg-values-supported-values-list"></a><details><summary>(Click to expand) Supported values list
+</summary><br>
 
 ```js
 [
@@ -3284,7 +3304,7 @@ _**default value**_:
   'HS256', 'HS384', 'HS512',
   'RS256', 'RS384', 'RS512',
   'PS256', 'PS384', 'PS512',
-  'ES256', 'ES384', 'ES512',
+  'ES256', 'ES256K', 'ES384', 'ES512',
   'EdDSA', // (note: EdDSA is only supported in node runtime >= 12.0.0)
 ]
 ```
@@ -3307,15 +3327,13 @@ _**default value**_:
   'RSA-OAEP'
 ]
 ```
-<a name="whitelisted-jwa-introspection-encryption-alg-values-supported-values-list"></a><details>
-  <summary>(Click to expand) Supported values list
-</summary>
-  <br>
+<a id="whitelisted-jwa-introspection-encryption-alg-values-supported-values-list"></a><details><summary>(Click to expand) Supported values list
+</summary><br>
 
 ```js
 [
-  // asymmetric RSAES based (note: RSA-OAEP-256 is only supported in node runtime >= 12.9.0)
-  'RSA-OAEP', 'RSA-OAEP-256', 'RSA1_5',
+  // asymmetric RSAES based (note: RSA-OAEP-* is only supported in node runtime >= 12.9.0)
+  'RSA-OAEP', 'RSA-OAEP-256', 'RSA-OAEP-384', 'RSA-OAEP-512', 'RSA1_5',
   // asymmetric ECDH-ES based
   'ECDH-ES', 'ECDH-ES+A128KW', 'ECDH-ES+A192KW', 'ECDH-ES+A256KW',
   // symmetric AES key wrapping
@@ -3343,10 +3361,8 @@ _**default value**_:
   'A256GCM'
 ]
 ```
-<a name="whitelisted-jwa-introspection-encryption-enc-values-supported-values-list"></a><details>
-  <summary>(Click to expand) Supported values list
-</summary>
-  <br>
+<a id="whitelisted-jwa-introspection-encryption-enc-values-supported-values-list"></a><details><summary>(Click to expand) Supported values list
+</summary><br>
 
 ```js
 [
@@ -3371,17 +3387,15 @@ _**default value**_:
   'EdDSA'
 ]
 ```
-<a name="whitelisted-jwa-introspection-endpoint-auth-signing-alg-values-supported-values-list"></a><details>
-  <summary>(Click to expand) Supported values list
-</summary>
-  <br>
+<a id="whitelisted-jwa-introspection-endpoint-auth-signing-alg-values-supported-values-list"></a><details><summary>(Click to expand) Supported values list
+</summary><br>
 
 ```js
 [
   'HS256', 'HS384', 'HS512',
   'RS256', 'RS384', 'RS512',
   'PS256', 'PS384', 'PS512',
-  'ES256', 'ES384', 'ES512',
+  'ES256', 'ES256K', 'ES384', 'ES512',
   'EdDSA', // (note: EdDSA is only supported in node runtime >= 12.0.0)
 ]
 ```
@@ -3403,10 +3417,8 @@ _**default value**_:
   'EdDSA'
 ]
 ```
-<a name="whitelisted-jwa-introspection-signing-alg-values-supported-values-list"></a><details>
-  <summary>(Click to expand) Supported values list
-</summary>
-  <br>
+<a id="whitelisted-jwa-introspection-signing-alg-values-supported-values-list"></a><details><summary>(Click to expand) Supported values list
+</summary><br>
 
 ```js
 [
@@ -3414,7 +3426,7 @@ _**default value**_:
   'HS256', 'HS384', 'HS512',
   'RS256', 'RS384', 'RS512',
   'PS256', 'PS384', 'PS512',
-  'ES256', 'ES384', 'ES512',
+  'ES256', 'ES256K', 'ES384', 'ES512',
   'EdDSA', // (note: EdDSA is only supported in node runtime >= 12.0.0)
 ]
 ```
@@ -3437,15 +3449,13 @@ _**default value**_:
   'RSA-OAEP'
 ]
 ```
-<a name="whitelisted-jwa-request-object-encryption-alg-values-supported-values-list"></a><details>
-  <summary>(Click to expand) Supported values list
-</summary>
-  <br>
+<a id="whitelisted-jwa-request-object-encryption-alg-values-supported-values-list"></a><details><summary>(Click to expand) Supported values list
+</summary><br>
 
 ```js
 [
-  // asymmetric RSAES based (note: RSA-OAEP-256 is only supported in node runtime >= 12.9.0)
-  'RSA-OAEP', 'RSA-OAEP-256', 'RSA1_5',
+  // asymmetric RSAES based (note: RSA-OAEP-* is only supported in node runtime >= 12.9.0)
+  'RSA-OAEP', 'RSA-OAEP-256', 'RSA-OAEP-384', 'RSA-OAEP-512', 'RSA1_5',
   // asymmetric ECDH-ES based
   'ECDH-ES', 'ECDH-ES+A128KW', 'ECDH-ES+A192KW', 'ECDH-ES+A256KW',
   // symmetric AES key wrapping
@@ -3473,10 +3483,8 @@ _**default value**_:
   'A256GCM'
 ]
 ```
-<a name="whitelisted-jwa-request-object-encryption-enc-values-supported-values-list"></a><details>
-  <summary>(Click to expand) Supported values list
-</summary>
-  <br>
+<a id="whitelisted-jwa-request-object-encryption-enc-values-supported-values-list"></a><details><summary>(Click to expand) Supported values list
+</summary><br>
 
 ```js
 [
@@ -3501,10 +3509,8 @@ _**default value**_:
   'EdDSA'
 ]
 ```
-<a name="whitelisted-jwa-request-object-signing-alg-values-supported-values-list"></a><details>
-  <summary>(Click to expand) Supported values list
-</summary>
-  <br>
+<a id="whitelisted-jwa-request-object-signing-alg-values-supported-values-list"></a><details><summary>(Click to expand) Supported values list
+</summary><br>
 
 ```js
 [
@@ -3512,7 +3518,7 @@ _**default value**_:
   'HS256', 'HS384', 'HS512',
   'RS256', 'RS384', 'RS512',
   'PS256', 'PS384', 'PS512',
-  'ES256', 'ES384', 'ES512',
+  'ES256', 'ES256K', 'ES384', 'ES512',
   'EdDSA', // (note: EdDSA is only supported in node runtime >= 12.0.0)
 ]
 ```
@@ -3534,17 +3540,15 @@ _**default value**_:
   'EdDSA'
 ]
 ```
-<a name="whitelisted-jwa-revocation-endpoint-auth-signing-alg-values-supported-values-list"></a><details>
-  <summary>(Click to expand) Supported values list
-</summary>
-  <br>
+<a id="whitelisted-jwa-revocation-endpoint-auth-signing-alg-values-supported-values-list"></a><details><summary>(Click to expand) Supported values list
+</summary><br>
 
 ```js
 [
   'HS256', 'HS384', 'HS512',
   'RS256', 'RS384', 'RS512',
   'PS256', 'PS384', 'PS512',
-  'ES256', 'ES384', 'ES512',
+  'ES256', 'ES256K', 'ES384', 'ES512',
   'EdDSA', // (note: EdDSA is only supported in node runtime >= 12.0.0)
 ]
 ```
@@ -3566,17 +3570,15 @@ _**default value**_:
   'EdDSA'
 ]
 ```
-<a name="whitelisted-jwa-token-endpoint-auth-signing-alg-values-supported-values-list"></a><details>
-  <summary>(Click to expand) Supported values list
-</summary>
-  <br>
+<a id="whitelisted-jwa-token-endpoint-auth-signing-alg-values-supported-values-list"></a><details><summary>(Click to expand) Supported values list
+</summary><br>
 
 ```js
 [
   'HS256', 'HS384', 'HS512',
   'RS256', 'RS384', 'RS512',
   'PS256', 'PS384', 'PS512',
-  'ES256', 'ES384', 'ES512',
+  'ES256', 'ES256K', 'ES384', 'ES512',
   'EdDSA', // (note: EdDSA is only supported in node runtime >= 12.0.0)
 ]
 ```
@@ -3599,15 +3601,13 @@ _**default value**_:
   'RSA-OAEP'
 ]
 ```
-<a name="whitelisted-jwa-userinfo-encryption-alg-values-supported-values-list"></a><details>
-  <summary>(Click to expand) Supported values list
-</summary>
-  <br>
+<a id="whitelisted-jwa-userinfo-encryption-alg-values-supported-values-list"></a><details><summary>(Click to expand) Supported values list
+</summary><br>
 
 ```js
 [
-  // asymmetric RSAES based (note: RSA-OAEP-256 is only supported in node runtime >= 12.9.0)
-  'RSA-OAEP', 'RSA-OAEP-256', 'RSA1_5',
+  // asymmetric RSAES based (note: RSA-OAEP-* is only supported in node runtime >= 12.9.0)
+  'RSA-OAEP', 'RSA-OAEP-256', 'RSA-OAEP-384', 'RSA-OAEP-512', 'RSA1_5',
   // asymmetric ECDH-ES based
   'ECDH-ES', 'ECDH-ES+A128KW', 'ECDH-ES+A192KW', 'ECDH-ES+A256KW',
   // symmetric AES key wrapping
@@ -3635,10 +3635,8 @@ _**default value**_:
   'A256GCM'
 ]
 ```
-<a name="whitelisted-jwa-userinfo-encryption-enc-values-supported-values-list"></a><details>
-  <summary>(Click to expand) Supported values list
-</summary>
-  <br>
+<a id="whitelisted-jwa-userinfo-encryption-enc-values-supported-values-list"></a><details><summary>(Click to expand) Supported values list
+</summary><br>
 
 ```js
 [
@@ -3663,10 +3661,8 @@ _**default value**_:
   'EdDSA'
 ]
 ```
-<a name="whitelisted-jwa-userinfo-signing-alg-values-supported-values-list"></a><details>
-  <summary>(Click to expand) Supported values list
-</summary>
-  <br>
+<a id="whitelisted-jwa-userinfo-signing-alg-values-supported-values-list"></a><details><summary>(Click to expand) Supported values list
+</summary><br>
 
 ```js
 [
@@ -3674,16 +3670,142 @@ _**default value**_:
   'HS256', 'HS384', 'HS512',
   'RS256', 'RS384', 'RS512',
   'PS256', 'PS384', 'PS512',
-  'ES256', 'ES384', 'ES512',
+  'ES256', 'ES256K', 'ES384', 'ES512',
   'EdDSA', // (note: EdDSA is only supported in node runtime >= 12.0.0)
 ]
 ```
 </details>
 <!-- END CONF OPTIONS -->
 
-[got-library]: https://github.com/sindresorhus/got
-[token-exchange]: https://tools.ietf.org/html/draft-ietf-oauth-token-exchange
-[defaults]: /lib/helpers/defaults.js
-[keygrip-module]: https://www.npmjs.com/package/keygrip
-[support-sponsor]: https://github.com/users/panva/sponsorship
+## FAQ
+
+### ID Token does not include claims other than sub
+
+Only response types that do not end up with an access_token (so, response_type=id_token) have
+end-user claims other than `sub` in their ID Tokens. This is the
+[Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html#ScopeClaims) spec behaviour. Read
+it you'll see requesting claims through the scope parameter only adds these claims to userinfo
+unless the response_type is `id_token` in which case they're added there. All other response types
+have access to the userinfo endpoint which returns these scope-requested claims. The other option is
+to allow clients to request specific claims from a source they expect it in via the `claims`
+parameter.
+
+But, if you absolutely need to have scope-requested claims in ID Tokens you can use the
+[`conformIdTokenClaims`](#conformidtokenclaims) configuration option.
+
+### Why does my .well-known/openid-configuration link to http endpoints instead of https endpoints?
+
+Your provider is behind a TLS terminating proxy, tell your provider instance to trust the proxy
+headers. More on this in
+[Trusting TLS offloading proxies](#trusting-tls-offloading-proxies)
+
+### My client_secret with special characters is not working
+
+You're likely using client_secret_basic client authentication and the oidc-provider is actually
+exhibiting conform behaviour. It's likely a bug in your client software - it's not encoding the
+header correctly.
+
+`client_secret_basic` is not 100% basic http auth, the username and password tokens are supposed to
+be additionally formencoded.
+
+A proper way of submitting `client_id` and `client_secret` using `client_secret_basic` is
+`Authorization: base64(formEncode(client_id):formEncode(client_secret))` as per
+https://tools.ietf.org/html/rfc6749#section-2.3.1 incl.
+https://tools.ietf.org/html/rfc6749#appendix-B
+
+Example:
+
+```js
+const client_id = 'an:identifier';
+const client_secret = 'some secure & non-standard secret';
+
+// After formencoding these two tokens
+const encoded_id = 'an%3Aidentifier';
+const encoded_secret = 'some+secure+%26+non-standard+secret';
+
+// Basic auth header format Authorization: Basic base64(encoded_id + ':' + encoded_secret)
+// Authorization: Basic YW4lM0FpZGVudGlmaWVyOnNvbWUrc2VjdXJlKyUyNitub24tc3RhbmRhcmQrc2VjcmV0
+```
+
+So essentially, your client is not submitting the client auth in a conform way and you should fix
+that.
+
+### I'm getting an client authentication failed error with no details
+
+Every client is configured with one of 7 available
+[`token_endpoint_auth_method` values](https://www.iana.org/assignments/oauth-parameters/oauth-parameters.xhtml#token-endpoint-auth-method)
+and it must adhere to how that given method must be submitted. Submitting multiple means of
+authentication is also not possible. If you're a provider operator you're encouraged to set up
+listeners for errors
+(see [events.md](https://github.com/panva/node-oidc-provider/blob/master/docs/events.md)) and
+deliver them to client developers out-of-band, e.g. by logs in an admin interface.
+
+```js
+function handleClientAuthErrors(err, { headers: { authorization }, oidc: { body, client } }) {
+  if (err.statusCode === 401 && err.message === 'invalid_client') {
+    // console.log(err);
+    // save error details out-of-bands for the client developers, `authorization`, `body`, `client`
+    // are just some details available, you can dig in ctx object for more.
+  }
+}
+provider.on('grant.error', handleClientAuthErrors);
+provider.on('introspection.error', handleClientAuthErrors);
+provider.on('revocation.error', handleClientAuthErrors);
+```
+
+### Refresh Tokens
+
+  > I'm not getting refresh_token from token_endpoint grant_type=authorization_code responses, why?  
+
+Do you support offline_access scope and consent prompt? Did the client request them in the
+authentication request?
+
+  > Yeah, still no refresh_token  
+
+Does the client have grant_type=refresh_token configured?
+
+  > Aaaah, that was it. (or one of the above if you follow [Core 1.0#OfflineAccess](http://openid.net/specs/openid-connect-core-1_0.html#OfflineAccess))  
+
+***
+
+  > The Authorization Server MAY grant Refresh Tokens in other contexts that are beyond the scope of this specification. How about that?
+
+Yeah, yeah, see [configuration](#issuerefreshtoken)
+
+### Password Grant Type, ROPC
+
+If you need it today something's wrong!
+
+- https://www.youtube.com/watch?v=qMtYaDmhnHU
+- https://www.youtube.com/watch?v=zuVuhl_Axbs
+
+ROPC falls beyond the scope of what the library can do magically on it's own having only accountId
+and the claims, it does not ask for an interface necessary to find an account by a username nor by
+validating the password digest. Custom implementation using the provided
+[`registerGrantType`](#custom-grant-types) API is simple enough if you absolutely need ROPC.
+
+### How to display, on the website of the OP itself, if the user is signed-in or not
+
+```js
+const ctx = provider.app.createContext(req, res)
+const session = await provider.Session.get(ctx)
+const signedIn = !!session.account
+```
+
+### Client Credentials only clients
+
+You're getting the `redirect_uris is mandatory property` error but Client Credential clients
+(Resource Servers) don't need `redirect_uris` or `response_types`... You're getting this error
+because they are required properties, but they can be empty...
+
+```js
+{
+  redirect_uris: [],
+  response_types: [],
+  grant_types: ['client_credentials']
+}
+```
+
+
+[support-sponsor]: https://github.com/sponsors/panva
 [sponsor-auth0]: https://auth0.com/overview?utm_source=GHsponsor&utm_medium=GHsponsor&utm_campaign=oidc-provider&utm_content=auth

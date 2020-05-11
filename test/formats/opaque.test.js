@@ -1,9 +1,11 @@
-const { spy, match: { string, number }, assert } = require('sinon');
+const sinon = require('sinon').createSandbox();
 const { expect } = require('chai');
 
 const { formats: { AccessToken: FORMAT } } = require('../../lib/helpers/defaults');
 const epochTime = require('../../lib/helpers/epoch_time');
 const bootstrap = require('../test_helper');
+
+const { spy, match: { string, number }, assert } = sinon;
 
 if (FORMAT === 'opaque') {
   describe('opaque storage', () => {
@@ -46,19 +48,11 @@ if (FORMAT === 'opaque') {
       accountId, claims, clientId, grantId, scope, sid, consumed, acr, amr, authTime, nonce,
       redirectUri, codeChallenge, codeChallengeMethod, aud, error, errorDescription, params,
       userCode, deviceInfo, gty, resource, policies, sessionUid, expiresWithSession,
-      'x5t#S256': s256, inFlight, iiat, rotations, extra, 'jkt#S256': s256,
+      'x5t#S256': s256, inFlight, iiat, rotations, extra, jkt: s256,
     };
     /* eslint-enable object-property-newline */
 
-    afterEach(function () {
-      [
-        'AuthorizationCode', 'AccessToken', 'RefreshToken', 'ClientCredentials', 'InitialAccessToken', 'RegistrationAccessToken', 'DeviceCode',
-      ].forEach((model) => {
-        if (this.TestAdapter.for(model).upsert.restore) {
-          this.TestAdapter.for(model).upsert.restore();
-        }
-      });
-    });
+    afterEach(sinon.restore);
 
     it('for AccessToken', async function () {
       const kind = 'AccessToken';
@@ -81,7 +75,7 @@ if (FORMAT === 'opaque') {
         scope,
         sid,
         'x5t#S256': s256,
-        'jkt#S256': s256,
+        jkt: s256,
         sessionUid,
         expiresWithSession,
         extra,
@@ -186,7 +180,7 @@ if (FORMAT === 'opaque') {
         scope,
         sid,
         'x5t#S256': s256,
-        'jkt#S256': s256,
+        jkt: s256,
         sessionUid,
         expiresWithSession,
       });
@@ -208,7 +202,7 @@ if (FORMAT === 'opaque') {
         kind,
         scope,
         'x5t#S256': s256,
-        'jkt#S256': s256,
+        jkt: s256,
         extra,
       });
     });

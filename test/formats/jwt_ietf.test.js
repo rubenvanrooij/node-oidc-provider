@@ -1,12 +1,14 @@
 /* eslint-disable no-param-reassign */
 
-const { spy, match: { string, number }, assert } = require('sinon');
+const sinon = require('sinon').createSandbox();
 const { expect } = require('chai');
 const base64url = require('base64url');
 
 const { formats: { AccessToken: FORMAT } } = require('../../lib/helpers/defaults');
 const epochTime = require('../../lib/helpers/epoch_time');
 const bootstrap = require('../test_helper');
+
+const { spy, match: { string, number }, assert } = sinon;
 
 function decode(b64urljson) {
   return JSON.parse(base64url.decode(b64urljson));
@@ -53,19 +55,11 @@ if (FORMAT === 'jwt-ietf') {
       accountId, claims, clientId, grantId, scope, sid, consumed, acr, amr, authTime, nonce,
       redirectUri, codeChallenge, codeChallengeMethod, aud, error, errorDescription, params,
       userCode, deviceInfo, gty, resource, policies, sessionUid, expiresWithSession,
-      'x5t#S256': s256, inFlight, iiat, rotations, extra, 'jkt#S256': s256,
+      'x5t#S256': s256, inFlight, iiat, rotations, extra, jkt: s256,
     };
     /* eslint-enable object-property-newline */
 
-    afterEach(function () {
-      [
-        'AccessToken', 'ClientCredentials',
-      ].forEach((model) => {
-        if (this.TestAdapter.for(model).upsert.restore) {
-          this.TestAdapter.for(model).upsert.restore();
-        }
-      });
-    });
+    afterEach(sinon.restore);
 
     it('for AccessToken', async function () {
       const kind = 'AccessToken';
@@ -88,7 +82,7 @@ if (FORMAT === 'jwt-ietf') {
         scope,
         sid,
         'x5t#S256': s256,
-        'jkt#S256': s256,
+        jkt: s256,
         sessionUid,
         expiresWithSession,
         extra,
@@ -110,7 +104,7 @@ if (FORMAT === 'jwt-ietf') {
         sub: accountId,
         cnf: {
           'x5t#S256': s256,
-          'jkt#S256': s256,
+          jkt: s256,
         },
       });
     });
@@ -137,7 +131,7 @@ if (FORMAT === 'jwt-ietf') {
         scope,
         sid,
         'x5t#S256': s256,
-        'jkt#S256': s256,
+        jkt: s256,
         sessionUid,
         expiresWithSession,
         extra,
@@ -159,7 +153,7 @@ if (FORMAT === 'jwt-ietf') {
         sub: 'pairwise-sub',
         cnf: {
           'x5t#S256': s256,
-          'jkt#S256': s256,
+          jkt: s256,
         },
       });
     });
@@ -180,7 +174,7 @@ if (FORMAT === 'jwt-ietf') {
         kind,
         scope,
         'x5t#S256': s256,
-        'jkt#S256': s256,
+        jkt: s256,
         extra,
       });
 
@@ -200,7 +194,7 @@ if (FORMAT === 'jwt-ietf') {
         scope,
         cnf: {
           'x5t#S256': s256,
-          'jkt#S256': s256,
+          jkt: s256,
         },
       });
     });

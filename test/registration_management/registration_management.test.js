@@ -104,14 +104,16 @@ describe('OAuth 2.0 Dynamic Client Registration Management Protocol', () => {
         .expect(this.failWith(400, 'invalid_request', "provided client_secret does not match the authenticated client's one"));
     });
 
-    it('must contain all previous properties', async function () {
+    it('allows for properties to be deleted by omission', async function () {
       const client = await setup.call(this, { userinfo_signed_response_alg: 'RS256' });
+      delete client.userinfo_signed_response_alg;
       return this.agent.put(`/reg/${client.client_id}`)
         .auth(client.registration_access_token, { type: 'bearer' })
-        .send(updateProperties(client, {
-          userinfo_signed_response_alg: undefined,
-        }))
-        .expect(this.failWith(400, 'invalid_request', 'userinfo_signed_response_alg must be provided'));
+        .send(updateProperties(client))
+        .expect(200)
+        .expect((res) => {
+          expect(res.body).not.to.have.property('userinfo_signed_response_alg');
+        });
     });
 
     it('provides a secret if suddently needed', async function () {
@@ -267,14 +269,18 @@ describe('OAuth 2.0 Dynamic Client Registration Management Protocol', () => {
   });
 
   describe('Client Delete Request', () => {
-    it('responds w/ empty 204 and nocache headers', async function () {
+    it('responds w/ empty 204 and nocache headers and removes the registration access token', async function () {
       const client = await setup.call(this, {});
-      return this.agent.del(`/reg/${client.client_id}`)
+      await this.agent.del(`/reg/${client.client_id}`)
         .auth(client.registration_access_token, { type: 'bearer' })
         .expect('pragma', 'no-cache')
         .expect('cache-control', 'no-cache, no-store')
         .expect('') // empty body
         .expect(204);
+
+      expect(
+        await this.provider.RegistrationAccessToken.find(client.registration_access_token),
+      ).to.be.undefined;
     });
 
     it('populates ctx.oidc.entities', function (done) {

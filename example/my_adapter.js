@@ -70,7 +70,7 @@ class MyAdapter {
      * - sid {string} - session identifier the token comes from
      * - 'x5t#S256' {string} - X.509 Certificate SHA-256 Thumbprint of a certificate bound access or
      *     refresh token
-     * - 'jkt#S256' {string} - JWK SHA-256 Thumbprint (according to [RFC7638]) of a DPoP bound
+     * - 'jkt' {string} - JWK SHA-256 Thumbprint (according to [RFC7638]) of a DPoP bound
      *     access or refresh token
      * - gty {string} - [AccessToken, RefreshToken only] space delimited grant values, indicating
      *     the grant type(s) they originate from (implicit, authorization_code, refresh_token or
@@ -175,10 +175,7 @@ class MyAdapter {
 
   /**
    *
-   * Return previously stored instance of Session by its uid reference property. You only
-   * need this method when issuing tokens bound to the end-user session. When a token is encountered
-   * that is bound to the session it will attempt to load the session by the stored reference on the
-   * token.
+   * Return previously stored instance of Session by its uid reference property.
    *
    * @return {Promise} Promise fulfilled with the stored session object (when found and not
    * dropped yet due to expiration) or falsy value when not found anymore. Rejected with error

@@ -1,7 +1,41 @@
-// tslint:disable-next-line:no-relative-import-in-test
-import { Provider, interactionPolicy } from './index.d';
+import { Provider, interactionPolicy, AsymmetricSigningAlgorithm } from './index.d';
 
 new Provider('https://op.example.com');
+
+new Provider('https://op.example.com', {
+  rotateRefreshToken: true,
+  formats: {
+    jwtAccessTokenSigningAlg() {
+      return 'ES384';
+    },
+    customizers: {
+      async jwt(ctx, token, parts) {
+        ctx.oidc.issuer.substring(0);
+        token.iat.toFixed();
+        parts.header = { foo: 'bar' };
+        parts.payload.foo = 'bar';
+        return parts;
+      },
+      async 'jwt-ietf'(ctx, token, parts) {
+        ctx.oidc.issuer.substring(0);
+        token.iat.toFixed();
+        parts.header = { foo: 'bar' };
+        parts.payload.foo = 'bar';
+        return parts;
+      },
+      async paseto(ctx, token, parts) {
+        ctx.oidc.issuer.substring(0);
+        token.iat.toFixed();
+        parts.footer = { foo: 'bar' };
+        parts.footer = Buffer.from('foo');
+        parts.footer = undefined;
+        parts.footer = 'foo';
+        parts.payload.foo = 'bar';
+        return parts;
+      },
+    },
+  },
+});
 
 const provider = new Provider('https://op.example.com', {
   acrValues: ['urn:example:bronze'],
@@ -17,13 +51,19 @@ const provider = new Provider('https://op.example.com', {
     async revokeByGrantId(grantId: string) {}
 
     async find(id: string) {
-      return {};
+      return {
+        consumed: false
+      };
     }
     async findByUserCode(userCode: string) {
-      return {};
+      return {
+        consumed: false
+      };
     }
     async findByUid(uid: string) {
-      return {};
+      return {
+        consumed: false
+      };
     }
   },
   claims: {
@@ -87,7 +127,7 @@ const provider = new Provider('https://op.example.com', {
       clientCredentials.iat.toFixed();
       return 'opaque';
     },
-    async jwtAccessTokenSigningAlg(ctx, token, client) {
+    async jwtAccessTokenSigningAlg(ctx, token, client): Promise<AsymmetricSigningAlgorithm> {
       ctx.oidc.issuer.substring(0);
       token.iat.toFixed();
       client.clientId.substring(0);
@@ -232,7 +272,7 @@ const provider = new Provider('https://op.example.com', {
   async findAccount(ctx, sub, token) {
     ctx.oidc.issuer.substring(0);
     sub.substring(0);
-    if (token) {
+    if (token !== undefined) {
       token.iat.toFixed();
     }
 
@@ -252,7 +292,7 @@ const provider = new Provider('https://op.example.com', {
   },
   async audiences(ctx, sub, token, use) {
     ctx.oidc.issuer.substring(0);
-    if (sub) {
+    if (sub !== undefined) {
       sub.substring(0);
     }
     token.iat.toFixed();
@@ -277,20 +317,29 @@ const provider = new Provider('https://op.example.com', {
   features: {
     devInteractions: { enabled: false },
     claimsParameter: { enabled: false },
-    introspection: { enabled: false },
+    introspection: {
+      enabled: false,
+      async allowedPolicy(ctx, client, token) {
+        ctx.oidc.issuer.substring(0);
+        client.clientId.substring(0);
+        token.iat.toFixed();
+        return false;
+      },
+    },
     userinfo: { enabled: false },
     jwtUserinfo: { enabled: false },
-    webMessageResponseMode: { enabled: false, ack: 'id-00' },
+    webMessageResponseMode: { enabled: false, ack: 'id-00', scriptNonce() { return "foo"; } },
     revocation: { enabled: false },
-    sessionManagement: { enabled: false, ack: 28, keepHeaders: false },
-    jwtIntrospection: { enabled: false, ack: 8 },
+    sessionManagement: { enabled: false, ack: 28, keepHeaders: false, scriptNonce() { return "foo"; } },
+    jwtIntrospection: { enabled: false, ack: 'draft-09' },
     jwtResponseModes: { enabled: false, ack: 2 },
     pushedAuthorizationRequests: { enabled: false, ack: 0 },
+    secp256k1: { enabled: false, ack: 'draft-03' },
     registration: {
       enabled: true,
       initialAccessToken: true,
       policies: {
-        foo(ctx, metadata) {
+        async foo(ctx, metadata) {
           ctx.oidc.issuer.substring(0);
           metadata.client_id.substring(0);
         }
@@ -336,7 +385,7 @@ const provider = new Provider('https://op.example.com', {
     clientCredentials: { enabled: false },
     backchannelLogout: { enabled: false, ack: 4 },
     ietfJWTAccessTokenProfile: { enabled: false, ack: 2 },
-    dPoP: { enabled: false, ack: 'id-02', iatTolerance: 120 },
+    dPoP: { enabled: false, ack: 'draft-01', iatTolerance: 120 },
     frontchannelLogout: {
       ack: 2,
       enabled: false,
@@ -359,10 +408,10 @@ const provider = new Provider('https://op.example.com', {
       async userCodeInputSource(ctx, form, out, err) {
         ctx.oidc.issuer.substring(0);
         form.substring(0);
-        if (out) {
+        if (out !== undefined) {
           out.error;
         }
-        if (err) {
+        if (err !== undefined) {
           err.message.substring(0);
         }
       },
@@ -382,7 +431,6 @@ const provider = new Provider('https://op.example.com', {
       certificateBoundAccessTokens: true,
       selfSignedTlsClientAuth: true,
       tlsClientAuth: true,
-      ack: 17,
       getCertificate(ctx) {
         ctx.oidc.issuer.substring(0);
         return 'foo';
@@ -469,6 +517,21 @@ provider.registerGrantType('urn:example', async (ctx, next) => {
   return next();
 }, ['foo', 'bar'], ['foo']);
 
+provider.on('authorization.accepted', (ctx) => {
+  const value = ctx.oidc.cookies.get('key');
+  if (value !== undefined) {
+    value.substring(0);
+  }
+
+  ctx.oidc.cookies.set('key', 'value', { signed: true, sameSite: 'strict' });
+});
+
+provider.on('interaction.started', (ctx, prompt) => {
+  ctx.oidc.route.substring(0);
+  prompt.name.substring(0);
+  prompt.reasons.pop();
+});
+
 provider.use((ctx, next) => {
   ctx.href.substring(0);
   return next();
@@ -482,11 +545,20 @@ provider.use(async (ctx, next) => {
 
 (async () => {
   const client = await provider.Client.find('foo');
-  if (client) {
+  if (client !== undefined) {
     client.clientId.substring(0);
   }
   const accessToken = await provider.AccessToken.find('foo');
-  if (accessToken) {
+  if (accessToken !== undefined) {
     accessToken.jti.substring(0);
   }
+
+  try {
+      await Promise.all([
+        provider.AccessToken.revokeByGrantId('grantId'),
+        provider.AuthorizationCode.revokeByGrantId('grantId'),
+        provider.DeviceCode.revokeByGrantId('grantId'),
+        provider.RefreshToken.revokeByGrantId('grantId'),
+      ]);
+  } catch(e) {}
 })();

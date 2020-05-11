@@ -3,7 +3,7 @@ const { strict: assert } = require('assert');
 const jose = require('jose');
 const moment = require('moment');
 const nock = require('nock');
-const sinon = require('sinon');
+const sinon = require('sinon').createSandbox();
 const { expect } = require('chai');
 const cloneDeep = require('lodash/cloneDeep');
 
@@ -48,32 +48,40 @@ describe('client keystore refresh', () => {
     });
   });
 
-  afterEach(async function () {
-    const client = await this.provider.Client.find('client');
-    if (client.keystore.fresh.restore) client.keystore.fresh.restore();
-  });
+  afterEach(sinon.restore);
 
-  it('gets the jwks from the uri', async function () {
+  it('gets the jwks from the uri (and does only one request concurrently)', async function () {
     await keystore.generate('EC', 'P-256');
     setResponse();
 
     const client = await this.provider.Client.find('client');
-    await client.keystore.refresh();
+    await Promise.all([
+      client.keystore.refresh(),
+      client.keystore.refresh(),
+    ]);
 
     expect(client.keystore.get({ kty: 'EC' })).to.be.ok;
   });
 
-  it('fails when private keys are encountered', async function () {
+  it('fails when private keys are encountered (and does only one request concurrently)', async function () {
     setResponse(keystore.toJWKS(true));
 
     const client = await this.provider.Client.find('client');
     sinon.stub(client.keystore, 'fresh').returns(false);
-    await client.keystore.refresh().then(fail, (err) => {
-      expect(err).to.be.an('error');
-      expect(err.message).to.equal('invalid_client_metadata');
-      expect(err.error_description).to.match(/jwks_uri could not be refreshed/);
-      expect(err.error_description).to.match(/jwks_uri must not contain private or symmetric keys/);
-    });
+    return Promise.all([
+      client.keystore.refresh().then(fail, (err) => {
+        expect(err).to.be.an('error');
+        expect(err.message).to.equal('invalid_client_metadata');
+        expect(err.error_description).to.match(/jwks_uri could not be refreshed/);
+        expect(err.error_description).to.match(/jwks_uri must not contain private or symmetric keys/);
+      }),
+      client.keystore.refresh().then(fail, (err) => {
+        expect(err).to.be.an('error');
+        expect(err.message).to.equal('invalid_client_metadata');
+        expect(err.error_description).to.match(/jwks_uri could not be refreshed/);
+        expect(err.error_description).to.match(/jwks_uri must not contain private or symmetric keys/);
+      }),
+    ]);
   });
 
   it('adds new keys', async function () {
@@ -195,6 +203,8 @@ describe('client keystore refresh', () => {
     });
 
     it('uses the max-age if Cache-Control is missing', async function () {
+      this.retries(1);
+
       const client = await this.provider.Client.find('client');
       await keystore.generate('EC', 'P-256');
 
@@ -215,6 +225,8 @@ describe('client keystore refresh', () => {
     });
 
     it('falls back to 1 minute throttle if no caching header is found', async function () {
+      this.retries(1);
+
       const client = await this.provider.Client.find('client');
       await keystore.generate('EC', 'P-256');
 

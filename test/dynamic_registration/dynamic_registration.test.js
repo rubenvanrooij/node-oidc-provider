@@ -22,7 +22,7 @@ describe('registration features', () => {
           expect(response.body).to.have.property('require_auth_time', false);
           expect(response.body).to.have.property('grant_types').and.eql(['authorization_code']);
           expect(response.body).to.have.property('response_types').and.eql(['code']);
-          expect(response.body).to.have.property('registration_client_uri', `${this.provider.issuer}/reg/${response.body.client_id}`);
+          expect(response.body).to.have.property('registration_client_uri', `${this.provider.issuer}${this.suitePath(`/reg/${response.body.client_id}`)}`);
         });
     });
 
@@ -153,7 +153,7 @@ describe('registration features', () => {
           grant_types: ['this is clearly wrong'],
           redirect_uris: ['https://client.example.com/cb'],
         })
-        .expect(this.failWith(400, 'invalid_client_metadata', 'grant_types can only contain members [implicit,authorization_code,refresh_token]'));
+        .expect(this.failWith(400, 'invalid_client_metadata', "grant_types can only contain 'implicit', 'authorization_code', or 'refresh_token'"));
     });
 
     it('validates the parameters to be valid and responds with redirect_uri errors', function () {
@@ -357,7 +357,7 @@ describe('registration features', () => {
           expect(response.body).to.have.property('require_auth_time', false);
           expect(response.body).to.have.property('grant_types').and.eql(['authorization_code']);
           expect(response.body).to.have.property('response_types').and.eql(['code']);
-          expect(response.body).to.have.property('registration_client_uri', `${this.provider.issuer}/reg/${response.body.client_id}`);
+          expect(response.body).to.have.property('registration_client_uri', `${this.provider.issuer}${this.suitePath(`/reg/${response.body.client_id}`)}`);
         });
     });
 

@@ -9,6 +9,8 @@ const sample = require('lodash/sample');
 const runtimeSupport = require('../lib/helpers/runtime_support');
 
 const FORMAT_REGEXP = /^--format=([\w-]+)$/;
+
+
 const formats = [];
 process.argv.forEach((arg) => {
   if (FORMAT_REGEXP.test(arg)) {
@@ -39,7 +41,7 @@ console.warn = function (...args) {
   if (!args[0].includes('WARNING: ')) warn.apply(this, args);
 };
 
-async function run() {
+async function singleRun() {
   clearRequireCache();
   const jose = require('jose'); // eslint-disable-line global-require
   global.keystore = new jose.JWKS.KeyStore();
@@ -55,6 +57,12 @@ async function run() {
   }
   DEFAULTS.formats.AccessToken = this.format;
   DEFAULTS.formats.ClientCredentials = this.format;
+
+  process.env.MOUNT_VIA = process.env.MOUNT_VIA || '';
+  process.env.MOUNT_TO = process.env.MOUNT_TO || '/';
+
+  const { MOUNT_VIA: via, MOUNT_TO: to } = process.env;
+
   await new Promise((resolve) => {
     global.server = createServer().listen(0);
     global.server.once('listening', resolve);
@@ -65,28 +73,42 @@ async function run() {
 
     if ('CI' in process.env) {
       mocha.reporter('min');
-      mocha.retries(1); // retry flaky time comparison tests
       mocha.forbidOnly(); // force suite fail on encountered only test
       mocha.forbidPending(); // force suite fail on encountered skip test
     }
 
+    const format = typeof this.format === 'string' ? this.format : 'dynamic';
+
+    const mountAddendum = via ? ` mounted using ${via === 'koa' ? 'koa-mount' : via} to ${to}` : '';
+    console.log('\n\x1b[32m%s\x1b[0m', `Running suite with ${format}${mountAddendum}`);
+
     mocha.run((failures) => {
       if (!failures) {
-        passed.push(`Suite passed with ${typeof this.format === 'string' ? this.format : 'dynamic'} format`);
+        passed.push(`Suite passed with ${format} format${mountAddendum}`);
         global.server.close(resolve);
       } else {
-        reject(new SuiteFailedError(`Suite failed with ${this.format} format`));
+        reject(new SuiteFailedError(`Suite failed with ${format} format${mountAddendum}`));
       }
     });
   });
 }
 
 (async () => {
-  if (formats.includes('opaque')) await run.call({ format: 'opaque' });
-  if (formats.includes('jwt')) await run.call({ format: 'jwt' });
-  if (formats.includes('jwt-ietf')) await run.call({ format: 'jwt-ietf' });
-  if (formats.includes('paseto')) await run.call({ format: 'paseto' });
-  if (formats.includes('dynamic')) await run.call({ format: () => sample(['opaque', 'jwt', 'jwt-ietf', runtimeSupport.EdDSA ? 'paseto' : undefined].filter(Boolean)) });
+  if (formats.includes('opaque')) {
+    await singleRun.call({ format: 'opaque' });
+  }
+  if (formats.includes('jwt')) {
+    await singleRun.call({ format: 'jwt' });
+  }
+  if (formats.includes('jwt-ietf')) {
+    await singleRun.call({ format: 'jwt-ietf' });
+  }
+  if (formats.includes('paseto')) {
+    await singleRun.call({ format: 'paseto' });
+  }
+  if (formats.includes('dynamic')) {
+    await singleRun.call({ format: () => sample(['opaque', 'jwt', 'jwt-ietf', runtimeSupport.EdDSA ? 'paseto' : undefined].filter(Boolean)) });
+  }
   passed.forEach((pass) => console.log('\x1b[32m%s\x1b[0m', pass));
 })()
   .catch((error) => {

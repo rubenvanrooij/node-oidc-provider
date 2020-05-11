@@ -2,7 +2,7 @@
 
 const { expect } = require('chai');
 const KeyGrip = require('keygrip'); // eslint-disable-line import/no-extraneous-dependencies
-const sinon = require('sinon');
+const sinon = require('sinon').createSandbox();
 
 const nanoid = require('../../lib/helpers/nanoid');
 const bootstrap = require('../test_helper');
@@ -47,19 +47,7 @@ function handlesInteractionSessionErrors() {
 
 describe('devInteractions', () => {
   before(bootstrap(__dirname));
-  afterEach(function () {
-    if (this.provider.Interaction.find.restore) {
-      this.provider.Interaction.find.restore();
-    }
-
-    if (this.provider.interactionDetails.restore) {
-      this.provider.interactionDetails.restore();
-    }
-
-    if (this.provider.interactionFinished.restore) {
-      this.provider.interactionFinished.restore();
-    }
-  });
+  afterEach(sinon.restore);
 
   context('render login', () => {
     beforeEach(function () { return this.logout(); });
@@ -79,7 +67,7 @@ describe('devInteractions', () => {
     it('with a form', function () {
       return this.agent.get(this.url)
         .expect(200)
-        .expect(new RegExp(`action="${this.url}"`))
+        .expect(new RegExp(`action="${this.provider.issuer}${this.url}"`))
         .expect(new RegExp('name="prompt" value="login"'))
         .expect(/Sign-in/);
     });
@@ -107,12 +95,33 @@ describe('devInteractions', () => {
     it('with a form', function () {
       return this.agent.get(this.url)
         .expect(200)
-        .expect(new RegExp(`action="${this.url}"`))
+        .expect(new RegExp(`action="${this.provider.issuer}${this.url}"`))
         .expect(new RegExp('name="prompt" value="consent"'))
         .expect(/Authorize/);
     });
 
-    handlesInteractionSessionErrors();
+    it('checks that the authentication session is still there', async function () {
+      const session = this.getSession({ instantiate: true });
+      await session.destroy();
+
+      await this.agent.get(this.url)
+        .accept('text/html')
+        .expect(400)
+        .expect('content-type', 'text/html; charset=utf-8')
+        .expect(/session not found/);
+    });
+
+    it("checks that the authentication session's principal didn't change", async function () {
+      const session = this.getSession({ instantiate: true });
+      session.account = 'foobar';
+      await session.save();
+
+      await this.agent.get(this.url)
+        .accept('text/html')
+        .expect(400)
+        .expect('content-type', 'text/html; charset=utf-8')
+        .expect(/session principal changed/);
+    });
   });
 
   context('when unimplemented prompt is requested', () => {
@@ -128,7 +137,9 @@ describe('devInteractions', () => {
         .query(auth)
         .then((response) => response.headers.location);
 
-      const interaction = this.TestAdapter.for('Interaction').syncFind(url.split('/')[2]);
+      const split = url.split('/');
+      const uid = split[split.length - 1];
+      const interaction = this.TestAdapter.for('Interaction').syncFind(uid);
       interaction.prompt.name = 'notimplemented';
 
       return this.agent.get(url).expect(501);
@@ -172,6 +183,7 @@ describe('devInteractions', () => {
         response_type: 'code',
         scope: 'openid',
       });
+      this.auth = auth;
 
       return this.agent.get('/auth')
         .query(auth)
@@ -180,21 +192,57 @@ describe('devInteractions', () => {
         });
     });
 
-    it('accepts the login and resumes auth', function () {
-      return this.agent.post(`${this.url}`)
+    it('accepts the login and resumes auth', async function () {
+      let location;
+      await this.agent.post(`${this.url}`)
         .send({
           prompt: 'login',
           login: 'foobar',
         })
         .type('form')
         .expect(302)
-        .expect('location', new RegExp(this.url.replace('interaction', 'auth')));
+        .expect('location', new RegExp(this.url.replace('interaction', 'auth')))
+        .expect(({ headers }) => {
+          ({ location } = headers);
+        });
+
+      await this.agent.get(new URL(location).pathname)
+        .expect(302);
+    });
+
+    it('checks that the account is a non empty string', async function () {
+      let location;
+      const spy = sinon.spy();
+      this.provider.once('server_error', spy);
+
+      await this.agent.post(`${this.url}`)
+        .send({
+          prompt: 'login',
+          login: '',
+        })
+        .type('form')
+        .expect(302)
+        .expect('location', new RegExp(this.url.replace('interaction', 'auth')))
+        .expect(({ headers }) => {
+          ({ location } = headers);
+        });
+
+      await this.agent.get(new URL(location).pathname)
+        .expect(302)
+        .expect(this.auth.validateState)
+        .expect(this.auth.validateClientLocation)
+        .expect(this.auth.validateError('server_error'));
+
+      expect(spy).to.have.property('calledOnce', true);
+      const error = spy.firstCall.args[1];
+      expect(error).to.be.an.instanceof(TypeError);
+      expect(error).to.have.property('message', 'account must be a non-empty string, got: string');
     });
 
     handlesInteractionSessionErrors();
   });
 
-  context('submit interaction', () => {
+  context('submit consent', () => {
     beforeEach(function () { return this.logout(); });
     beforeEach(function () { return this.login(); });
     beforeEach(function () {
@@ -211,43 +259,111 @@ describe('devInteractions', () => {
         });
     });
 
-    it('accepts the interaction and resumes auth', function () {
-      return this.agent.post(`${this.url}`)
+    it('accepts the consent and resumes auth', async function () {
+      let location;
+      await this.agent.post(`${this.url}`)
         .send({
           prompt: 'consent',
         })
         .type('form')
         .expect(302)
-        .expect('location', new RegExp(this.url.replace('interaction', 'auth')));
+        .expect('location', new RegExp(this.url.replace('interaction', 'auth')))
+        .expect(({ headers }) => {
+          ({ location } = headers);
+        });
+
+      await this.agent.get(new URL(location).pathname)
+        .expect(302);
+    });
+
+    it('checks the session interaction came from still exists', async function () {
+      let location;
+      await this.agent.post(`${this.url}`)
+        .send({
+          prompt: 'consent',
+        })
+        .type('form')
+        .expect(302)
+        .expect('location', new RegExp(this.url.replace('interaction', 'auth')))
+        .expect(({ headers }) => {
+          ({ location } = headers);
+        });
+
+      const session = this.getSession({ instantiate: true });
+      await session.destroy();
+
+      await this.agent.get(new URL(location).pathname)
+        .expect(400)
+        .expect('content-type', 'text/html; charset=utf-8')
+        .expect(/interaction session and authentication session mismatch/);
+    });
+
+    it('checks the session interaction came from is still the one', async function () {
+      let location;
+      await this.agent.post(`${this.url}`)
+        .send({
+          prompt: 'consent',
+        })
+        .type('form')
+        .expect(302)
+        .expect('location', new RegExp(this.url.replace('interaction', 'auth')))
+        .expect(({ headers }) => {
+          ({ location } = headers);
+        });
+
+      await this.login();
+
+      await this.agent.get(new URL(location).pathname)
+        .expect(400)
+        .expect('content-type', 'text/html; charset=utf-8')
+        .expect(/interaction session and authentication session mismatch/);
+    });
+
+    it('checks the session interaction came from is still the one', async function () {
+      let location;
+      await this.agent.post(`${this.url}`)
+        .send({
+          prompt: 'consent',
+        })
+        .type('form')
+        .expect(302)
+        .expect('location', new RegExp(this.url.replace('interaction', 'auth')))
+        .expect(({ headers }) => {
+          ({ location } = headers);
+        });
+
+      await this.login();
+
+      await this.agent.get(new URL(location).pathname)
+        .expect(400)
+        .expect('content-type', 'text/html; charset=utf-8')
+        .expect(/interaction session and authentication session mismatch/);
     });
 
     handlesInteractionSessionErrors();
   });
 });
 
-describe('resume after interaction', () => {
+describe('resume after consent', () => {
   before(bootstrap(__dirname));
-
-  afterEach(function () {
-    if (this.provider.Interaction.find.restore) {
-      this.provider.Interaction.find.restore();
-    }
-  });
+  afterEach(sinon.restore);
 
   function setup(grant, result, sessionData) {
     const cookies = [];
 
-    const interaction = new this.provider.Interaction('resume', {});
     const session = new this.provider.Session({ jti: 'sess', ...sessionData });
+    const interaction = new this.provider.Interaction('resume', {
+      params: grant,
+      session,
+    });
     const keys = new KeyGrip(i(this.provider).configuration('cookies.keys'));
 
     expect(grant).to.be.ok;
 
-    const cookie = `_interaction_resume=resume; path=/auth/resume; expires=${expire.toGMTString()}; httponly`;
+    const cookie = `_interaction_resume=resume; path=${this.suitePath('/auth/resume')}; expires=${expire.toGMTString()}; httponly`;
     cookies.push(cookie);
     let [pre, ...post] = cookie.split(';');
     cookies.push([`_interaction_resume.sig=${keys.sign(pre)}`, ...post].join(';'));
-    Object.assign(interaction, { params: grant });
 
     const sessionCookie = `_session=sess; path=/; expires=${expire.toGMTString()}; httponly`;
     cookies.push(sessionCookie);
@@ -391,13 +507,15 @@ describe('resume after interaction', () => {
         account: nanoid(),
       });
 
+      let state;
+
       await this.agent.get('/auth/resume')
         .expect(200)
         .expect('content-type', 'text/html; charset=utf-8')
         .expect(/document.addEventListener\('DOMContentLoaded', function \(\) { document.forms\[0\].submit\(\) }\);/)
         .expect(/<input type="hidden" name="logout" value="yes"\/>/)
         .expect(({ text }) => {
-          const { state } = this.getSession();
+          ({ state } = this.getSession());
           expect(state).to.have.property('clientId', 'client');
           expect(state).to.have.property('postLogoutRedirectUri').that.matches(/\/auth\/resume$/);
           expect(text).to.match(new RegExp(`input type="hidden" name="xsrf" value="${state.secret}"`));
@@ -405,6 +523,20 @@ describe('resume after interaction', () => {
         .expect(/<form method="post" action=".+\/session\/end\/confirm">/);
 
       expect(await this.provider.Interaction.find('resume')).to.be.ok;
+
+      await this.agent.post('/session/end/confirm')
+        .send({
+          xsrf: state.secret,
+          logout: 'yes',
+        })
+        .type('form')
+        .expect(302)
+        .expect('location', /\/auth\/resume$/);
+
+      await this.agent.get('/auth/resume')
+        .expect(302)
+        .expect(auth.validateState)
+        .expect(auth.validateClientLocation);
     });
   });
 

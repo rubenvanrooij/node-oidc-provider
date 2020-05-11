@@ -51,10 +51,6 @@ const provider = new Provider(/* your issuer identifier */, {
               throw new InvalidClientMetadata('redirect_uris may only have a wildcard in the hostname');
             }
 
-            if (false /* TODO check the hostname is not an IP with an asterisk */) {
-              throw new InvalidClientMetadata('redirect_uris with a wildcard must not have an IP as hostname');
-            }
-
             const test = hostname.replace('*', 'test');
 
             // checks that the wildcard is for a full subdomain e.g. *.panva.cz, not *suffix.panva.cz
@@ -83,7 +79,9 @@ const hasWildcardHost = (redirectUri) => {
 const wildcardMatches = (redirectUri, wildcardUri) => !!wildcard(wildcardUri, redirectUri);
 
 provider.Client.prototype.redirectUriAllowed = function wildcardRedirectUriAllowed(redirectUri) {
-  if (redirectUriAllowed.call(this, redirectUri)) return true;
+  if (!redirectUri.includes('*')) {
+    return redirectUriAllowed.call(this, redirectUri);
+  }
   const wildcardUris = this.redirectUris.filter(hasWildcardHost);
   return wildcardUris.some(wildcardMatches.bind(undefined, redirectUri));
 };
